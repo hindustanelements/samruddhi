@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply bg-cream text-ink font-sans antialiased; }
+  h1,h2,h3,h4 { @apply font-display; }
+  button,input,select,textarea { @apply outline-none; }
+}
+@layer components {
+  .container-site { @apply mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full bg-forest px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-leaf; }
+  .btn-light { @apply inline-flex items-center justify-center gap-2 rounded-full border border-forest/15 bg-white/85 px-6 py-3 text-sm font-bold text-forest backdrop-blur transition hover:-translate-y-0.5 hover:bg-white; }
+  .eyebrow { @apply text-xs font-bold uppercase tracking-[.22em] text-clay; }
+  .section-title { @apply mt-2 text-3xl leading-tight text-forest md:text-4xl; }
+  .field { @apply w-full rounded-2xl border border-forest/15 bg-white px-4 py-3 text-sm placeholder:text-ink/40 focus:border-leaf focus:ring-4 focus:ring-leaf/10; }
+  .card { @apply rounded-[1.75rem] border border-forest/10 bg-white shadow-soft; }
+}
+.hero-noise { background-image: radial-gradient(rgba(255,255,255,.28) 1px, transparent 1px); background-size: 5px 5px; }
+.hide-scrollbar::-webkit-scrollbar { display:none; }

@@ -1,6 +1,17 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app/client
+
+COPY client/package*.json ./
+RUN npm ci
+
+COPY client/ ./
+RUN npm run build
+
 FROM nginx:alpine
 
-COPY index.html /usr/share/nginx/html/index.html
+COPY client/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/client/dist /usr/share/nginx/html
 
 EXPOSE 80
 
