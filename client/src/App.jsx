@@ -258,7 +258,7 @@ function Home() {
 
     <section className="container-site py-20">
       <SectionHead eyebrow="Shop by range" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
-      <div className="hide-scrollbar flex gap-4 overflow-x-auto pb-3">{categories.map((c, i)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group min-w-[180px] flex-1 rounded-[1.5rem] border border-forest/10 bg-white p-5 transition hover:bg-forest hover:text-white"><span className={`grid h-12 w-12 place-items-center rounded-full ${i%2 ? "bg-oat text-clay" : "bg-leaf/10 text-leaf"} font-display text-lg font-bold group-hover:bg-white/10 group-hover:text-white`}>{c.name === "Mitti Cookware" ? "MC" : categoryIcons[c.name] || c.name[0]}</span><h3 className="mt-6 text-lg">{c.name}</h3><p className="mt-1 text-xs opacity-55">{c._count?.products || 0} products</p></Link>)}</div>
+      <div className="hide-scrollbar flex gap-4 overflow-x-auto pb-3">{categories.map((c, i)=><div key={c.id} className="min-w-[180px] flex-1 rounded-[1.5rem] border border-forest/10 bg-white p-5"><span className={`grid h-12 w-12 place-items-center rounded-full ${i%2 ? "bg-oat text-clay" : "bg-leaf/10 text-leaf"} font-display text-lg font-bold`}>{c.name === "Mitti Cookware" ? "MC" : categoryIcons[c.name] || c.name[0]}</span><h3 className="mt-6 text-lg text-forest">{c.name}</h3></div>)}</div>
     </section>
 
     <section className="bg-white py-20"><div className="container-site">
