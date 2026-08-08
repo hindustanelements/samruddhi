@@ -16,6 +16,7 @@ BACKEND_PID=$!
 # Start frontend
 cd /app/frontend
 export PORT=${FRONTEND_PORT:-3000}
+export HOSTNAME=0.0.0.0
 echo "Starting frontend on port $PORT"
 node server.js &
 FRONTEND_PID=$!
