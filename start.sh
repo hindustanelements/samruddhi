@@ -6,6 +6,7 @@ echo "Starting application: backend + frontend"
 # Start backend
 cd /app/backend
 export PORT=${PORT:-5000}
+export PORT=5000
 echo "Applying database migrations (prisma migrate deploy)..."
 npx prisma migrate deploy
 echo "Starting backend on port $PORT"
