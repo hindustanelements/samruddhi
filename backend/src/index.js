@@ -1154,7 +1154,15 @@ app.post("/api/products/bulk-upload", auth(Role.ADMIN), async (req, res, next) =
 
 app.get("/api/products", async (req, res) => {
   const { category, search, sort = "newest", featured } = req.query;
-  const orderBy = sort === "price-low" ? { discountPrice: "asc" } : sort === "price-high" ? { discountPrice: "desc" } : sort === "bestsellers" ? { bestseller: "desc" } : { createdAt: "desc" };
+  const orderBy = sort === "price-low"
+    ? { discountPrice: "asc" }
+    : sort === "price-high"
+    ? { discountPrice: "desc" }
+    : sort === "bestsellers"
+    ? { bestseller: "desc" }
+    : sort === "name" || sort === "alpha"
+    ? { name: "asc" }
+    : { createdAt: "desc" };
   const products = await prisma.product.findMany({
     where: {
       active: true,
