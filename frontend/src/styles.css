@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-page: #ffffff;
+    --color-surface: #ffffff;
+    --color-text: #26342b;
+    --color-heading: #294936;
+    --color-primary: #294936;
+    --color-primary-hover: #58784f;
+    --color-accent: #a85f3d;
+    --color-muted: #ebe1cb;
+    --color-nav-bg: #b23b3b;
+    --color-nav-text: #ffffff;
+    --color-nav-hover: #f4d35e;
+    --color-nav-surface: rgba(255, 255, 255, 0.14);
+  }
+  html { scroll-behavior: smooth; }
+  body { @apply font-sans antialiased; background: var(--color-page); color: var(--color-text); }
+  h1,h2,h3,h4 { @apply font-display; }
+  button,input,select,textarea { @apply outline-none; }
+}
+@layer components {
+  .container-site { @apply mx-auto w-full max-w-[1240px] px-4 sm:px-6 lg:px-8; }
+  .btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5; background: var(--color-primary); }
+  .btn-primary:hover { background: var(--color-primary-hover); }
+  .btn-light { @apply inline-flex items-center justify-center gap-2 rounded-full border px-6 py-3 text-sm font-bold backdrop-blur transition hover:-translate-y-0.5; border-color: color-mix(in srgb, var(--color-primary) 15%, transparent); background: color-mix(in srgb, var(--color-surface) 85%, transparent); color: var(--color-primary); }
+  .btn-light:hover { background: var(--color-surface); }
+  .eyebrow { @apply text-xs font-bold uppercase tracking-[.22em]; color: var(--color-accent); }
+  .section-title { @apply mt-2 text-3xl leading-tight md:text-4xl; color: var(--color-heading); }
+  .field { @apply w-full rounded-2xl border px-4 py-3 text-sm; border-color: color-mix(in srgb, var(--color-primary) 15%, transparent); background: var(--color-surface); }
+  .field::placeholder { color: color-mix(in srgb, var(--color-text) 40%, transparent); }
+  .field:focus { border-color: var(--color-primary-hover); box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary-hover) 10%, transparent); }
+  .card { @apply rounded-[1.75rem] shadow-soft; border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent); background: var(--color-surface); }
+}
+.hero-noise { background-image: radial-gradient(rgba(255,255,255,.28) 1px, transparent 1px); background-size: 5px 5px; }
+.hide-scrollbar::-webkit-scrollbar { display:none; }

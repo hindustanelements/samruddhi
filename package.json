@@ -1,12 +1,36 @@
 {
-  "name": "samruddhi-store",
+  "name": "samruddhi-api",
+  "version": "1.0.0",
+  "description": "Samruddhi Store Backend API",
   "private": true,
+  "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
-    "build": "npm run build --prefix client",
-    "install:all": "npm install --prefix server && npm install --prefix client"
+    "dev": "node src/index.js",
+    "start": "node src/index.js",
+    "build": "echo \"Build completed successfully\"",
+    "db:push": "prisma db push --skip-generate && prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.8.2",
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "nodemailer": "^9.0.3",
+    "slugify": "^1.6.6"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "prisma": "^6.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
+
+

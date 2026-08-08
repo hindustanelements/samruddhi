@@ -1,0 +1,32 @@
+# Node modules
+node_modules
+**/node_modules
+
+# Git + editor folders
+.git
+.vscode
+.idea
+
+# Environment and secrets
+.env
+.env.*
+
+# Logs
+npm-debug.log
+*.log
+
+# OS files
+.DS_Store
+
+# Build outputs
+dist
+build
+.next
+coverage
+
+# Package artifacts
+*.tgz
+
+# Misc
+.sass-cache
+*.local

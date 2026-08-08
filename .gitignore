@@ -1,8 +1,32 @@
-node_modules
-dist
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Environment files
 .env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Next.js build output
+.next/
+**/.next/
+
+# Other build folders
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+
+# IDE/Editor folders and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Log files
 *.log
-server/prisma/dev.db
-.chrome-*/
-/homepage-*.png
-/grand-opening-*.png
