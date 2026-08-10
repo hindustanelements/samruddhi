@@ -1168,7 +1168,7 @@ app.get("/api/products", async (req, res) => {
       active: true,
       ...(category ? { category: { slug: category } } : {}),
       ...(featured === "true" ? { featured: true } : {}),
-      ...(search ? { OR: [{ name: { contains: search, mode: "insensitive" } }, { shortDescription: { contains: search, mode: "insensitive" } }] } : {})
+      ...(search ? { OR: [{ name: { startsWith: search, mode: "insensitive" } }, { shortDescription: { contains: search, mode: "insensitive" } }] } : {})
     }, include: { category: true }, orderBy
   });
   res.json(products.map(productShape));
