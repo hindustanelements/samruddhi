@@ -9,8 +9,8 @@ export default function ProductCard({ product }) {
   const { add } = useApp();
   const price = product.discountPrice || product.price;
   return <article className="group overflow-hidden rounded-[1.6rem] border border-forest/10 bg-white transition duration-300 hover:-translate-y-1 hover:shadow-soft">
-    <Link to={`/products/${product.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-oat">
-      <img src={product.image} alt={`${product.name} by Samruddhi`} className="h-full w-full object-contain p-3 transition duration-700 group-hover:scale-105" onError={(e)=>{e.currentTarget.src="/samruddhi-hero.png"}}/>
+    <Link to={`/products/${product.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-white">
+      <img src={product.image} alt={`${product.name} by Samruddhi`} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" onError={(e)=>{e.currentTarget.src="/samruddhi-hero.png"}}/>
       {product.bestseller && <span className="absolute left-3 top-3 rounded-full bg-turmeric px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-forest">Bestseller</span>}
       <button aria-label="Save product" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-forest opacity-0 transition group-hover:opacity-100"><Heart size={17}/></button>
     </Link>
