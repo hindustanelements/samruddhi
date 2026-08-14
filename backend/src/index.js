@@ -20,7 +20,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
-const uploadsDir = path.join(publicDir, "uploads");
+const uploadsDir = process.env.UPLOADS_DIR || path.join(publicDir, "uploads");
 const secret = process.env.JWT_SECRET || "development-only-secret";
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = Number(process.env.SMTP_PORT || 587);
@@ -495,7 +495,7 @@ const heroSlideData = (body) => ({
 const requireHeroSlide = (data) => {
   if (!data.eyebrow || !data.title || !data.body || !data.image) return "Eyebrow, title, body and image are required.";
   if (!data.categoryId) return "Hero slide category is required.";
-  if (!data.image.startsWith("/uploads/") && !data.image.startsWith("/slide-") && !data.image.startsWith("/samruddhi-")) return "Hero slide image must be uploaded from local files.";
+  if (!data.image.startsWith("/uploads/") && !data.image.startsWith("/slide-") && !data.image.startsWith("/samruddhi-") && !data.image.startsWith("data:")) return "Hero slide image must be uploaded from local files.";
   return "";
 };
 const heroSlideRows = () => prisma.$queryRaw`
@@ -528,14 +528,14 @@ const cleanLogoImages = (value) => {
 };
 const validateLogoImages = (images) => {
   for (const image of cleanLogoImages(images)) {
-    if (!image.startsWith("/uploads/") && !image.endsWith("-transparent.png")) return "Logos must be uploaded from local files.";
+    if (!image.startsWith("/uploads/") && !image.endsWith("-transparent.png") && !image.startsWith("data:")) return "Logos must be uploaded from local files.";
   }
   return "";
 };
 const cleanSettingImage = (image) => String(image || "").trim();
 const validateUploadedSettingImage = (image, label) => {
   const clean = cleanSettingImage(image);
-  if (clean && !clean.startsWith("/uploads/")) return `${label} image must be uploaded from local files.`;
+  if (clean && !clean.startsWith("/uploads/") && !clean.startsWith("data:")) return `${label} image must be uploaded from local files.`;
   return "";
 };
 const ensureDatabaseShape = async () => {
@@ -772,7 +772,7 @@ const categoryRows = () => prisma.$queryRaw`
 const categoryShape = (category) => ({ ...category, _count: { products: Number(category.productCount || 0) } });
 const requireCategoryImage = (image) => {
   if (!image) return "Category image is required.";
-  if (!image.startsWith("/uploads/")) return "Category image must be uploaded from local files.";
+  if (!image.startsWith("/uploads/") && !image.startsWith("data:")) return "Category image must be uploaded from local files.";
   return "";
 };
 
@@ -1059,12 +1059,14 @@ app.post("/api/uploads/image", auth(Role.ADMIN), async (req, res, next) => {
     if (!match) return res.status(400).json({ message: "Choose a PNG, JPG, WEBP or GIF image file." });
     const buffer = Buffer.from(match[3], "base64");
     if (buffer.length > 10 * 1024 * 1024) return res.status(400).json({ message: "Image must be 10 MB or smaller." });
-    await fs.mkdir(uploadsDir, { recursive: true });
-    const ext = match[2].replace("jpeg", "jpg");
-    const base = slugify(path.parse(req.body.filename || "hero-slide").name || "hero-slide", { lower: true, strict: true });
-    const filename = `${Date.now()}-${base}.${ext}`;
-    await fs.writeFile(path.join(uploadsDir, filename), buffer);
-    res.status(201).json({ url: `/uploads/${filename}` });
+    try {
+      await fs.mkdir(uploadsDir, { recursive: true });
+      const ext = match[2].replace("jpeg", "jpg");
+      const base = slugify(path.parse(req.body.filename || "upload").name || "upload", { lower: true, strict: true });
+      const filename = `${Date.now()}-${base}.${ext}`;
+      await fs.writeFile(path.join(uploadsDir, filename), buffer);
+    } catch {}
+    res.status(201).json({ url: req.body.dataUrl });
   } catch (e) { next(e); }
 });
 

@@ -21,7 +21,7 @@ function ProductDetails() {
         <div className="mt-9 grid gap-3 sm:grid-cols-2">{[[Leaf,"Naturally sourced"],[ShieldCheck,"Quality assured"],[Truck,"Careful delivery"],[Package,"Freshly packed"]].map(([I,t])=><div key={t} className="flex items-center gap-3 rounded-xl bg-white p-4 text-sm font-semibold"><I size={19} className="text-clay"/>{t}</div>)}</div>
       </div>
     </div>
-    <div className="mt-16 grid gap-5 md:grid-cols-3">{[["Why you’ll love it",product.benefits],,["Our packing promise","Packed in clean, food-safe materials and handled in small batches to preserve natural character."]].map(([t,d])=><div key={t} className="card p-7"><h3 className="text-xl text-forest">{t}</h3><p className="mt-3 text-sm leading-6 text-ink/60">{d}</p></div>)}</div>
+    <div className="mt-16 grid gap-5 md:grid-cols-3">{[["Why you’ll love it",product.benefits], ["Our packing promise","Packed in clean, food-safe materials and handled in small batches to preserve natural character."]].map(([t,d])=><div key={t} className="card p-7"><h3 className="text-xl text-forest">{t}</h3><p className="mt-3 text-sm leading-6 text-ink/60">{d}</p></div>)}</div>
   </main>;
 }
 
