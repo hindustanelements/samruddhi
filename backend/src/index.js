@@ -825,6 +825,7 @@ app.delete("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
     const id = Number(req.params.id);
     const products = await prisma.product.count({ where: { categoryId: id } });
     if (products > 0) return res.status(409).json({ message: "Move or delete products in this category first." });
+    await prisma.heroSlide.updateMany({ where: { categoryId: id }, data: { categoryId: null } });
     await prisma.category.delete({ where: { id } });
     res.status(204).end();
   } catch (e) { next(e); }
@@ -1155,6 +1156,15 @@ app.post("/api/products/bulk-upload", auth(Role.ADMIN), async (req, res, next) =
 });
 
 app.get("/api/products", async (req, res) => {
+  let isAdmin = false;
+  try {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (token) {
+      const auth = jwt.verify(token, secret);
+      isAdmin = auth.role === Role.ADMIN;
+    }
+  } catch (e) {}
+
   const { category, search, sort = "newest", featured } = req.query;
   const orderBy = sort === "price-low"
     ? { discountPrice: "asc" }
@@ -1167,7 +1177,7 @@ app.get("/api/products", async (req, res) => {
     : { createdAt: "desc" };
   const products = await prisma.product.findMany({
     where: {
-      active: true,
+      ...(isAdmin ? {} : { active: true }),
       ...(category ? { category: { slug: category } } : {}),
       ...(featured === "true" ? { featured: true } : {}),
       ...(search ? { OR: [{ name: { startsWith: search, mode: "insensitive" } }, { shortDescription: { contains: search, mode: "insensitive" } }] } : {})
