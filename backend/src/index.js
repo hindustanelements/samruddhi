@@ -77,14 +77,26 @@ const auth = (requiredRole) => async (req, res, next) => {
     next();
   } catch { res.status(401).json({ message: "Your session has expired." }); }
 };
-const safeImage = (image) => String(image || "").startsWith("data:image/") ? "/samruddhi-hero.png" : image;
-const productShape = (p) => ({ ...p, price: Number(p.price), discountPrice: p.discountPrice ? Number(p.discountPrice) : null });
+const safeImage = (image) => image || "/samruddhi-hero.png";
+
+const productShape = (p) => ({
+  ...p,
+  price: Number(p.price),
+  discountPrice: p.discountPrice ? Number(p.discountPrice) : null
+});
+
 const safeProductShape = (p) => {
   const shaped = productShape(p);
+
   return {
     ...shaped,
     image: safeImage(shaped.image),
-    category: shaped.category ? { ...shaped.category, image: safeImage(shaped.category.image) } : shaped.category
+    category: shaped.category
+      ? {
+          ...shaped.category,
+          image: safeImage(shaped.category.image)
+        }
+      : shaped.category
   };
 };
 const productRows = (rows) => rows.map((row) => safeProductShape({
