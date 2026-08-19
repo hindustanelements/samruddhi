@@ -13,7 +13,7 @@ import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import prismaPackage from "@prisma/client";
 
-const { PrismaClient, Role } = prismaPackage;
+const { PrismaClient, Role, Prisma } = prismaPackage;
 
 const prisma = new PrismaClient();
 const app = express();
@@ -77,7 +77,49 @@ const auth = (requiredRole) => async (req, res, next) => {
     next();
   } catch { res.status(401).json({ message: "Your session has expired." }); }
 };
+const safeImage = (image) => String(image || "").startsWith("data:image/") ? "/samruddhi-hero.png" : image;
 const productShape = (p) => ({ ...p, price: Number(p.price), discountPrice: p.discountPrice ? Number(p.discountPrice) : null });
+const safeProductShape = (p) => {
+  const shaped = productShape(p);
+  return {
+    ...shaped,
+    image: safeImage(shaped.image),
+    category: shaped.category ? { ...shaped.category, image: safeImage(shaped.category.image) } : shaped.category
+  };
+};
+const productRows = (rows) => rows.map((row) => safeProductShape({
+  id: row.id,
+  name: row.name,
+  slug: row.slug,
+  sku: row.sku,
+  unit: row.unit,
+  shortDescription: row.shortDescription,
+  description: row.description,
+  benefits: row.benefits,
+  usage: row.usage,
+  price: row.price,
+  discountPrice: row.discountPrice,
+  weight: row.weight,
+  stock: row.stock,
+  image: row.image,
+  metaTitle: row.metaTitle,
+  metaDescription: row.metaDescription,
+  seoKeywords: row.seoKeywords,
+  featured: row.featured,
+  bestseller: row.bestseller,
+  active: row.active,
+  categoryId: row.categoryId,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+  category: row.category_id ? {
+    id: row.category_id,
+    name: row.category_name,
+    slug: row.category_slug,
+    description: row.category_description,
+    image: safeImage(row.category_image),
+    createdAt: row.category_createdAt
+  } : null
+}));
 const productData = (body) => ({
   name: body.name?.trim(),
   slug: body.slug?.trim() || slugify(body.name || "", { lower: true }),
@@ -829,16 +871,24 @@ app.delete("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
     res.status(204).end();
   } catch (e) { next(e); }
 });
-app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res) => {
-  const [products, orders, users, contactRows, revenueResult] = await Promise.all([
-    prisma.product.count(),
-    prisma.order.count(),
-    prisma.user.count(),
-    prisma.$queryRaw`SELECT COUNT(*)::int AS count FROM "ContactSubmission"`,
-    prisma.order.aggregate({ _sum: { total: true } })
-  ]);
-  const contacts = Number(contactRows[0]?.count || 0);
-  res.json({ products, orders, users, contacts, revenue: Number(revenueResult._sum.total || 0) });
+app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res, next) => {
+  try {
+    const [overview] = await prisma.$queryRaw`
+      SELECT
+        (SELECT COUNT(*)::int FROM "Product") AS products,
+        (SELECT COUNT(*)::int FROM "Order") AS orders,
+        (SELECT COUNT(*)::int FROM "User") AS users,
+        (SELECT COUNT(*)::int FROM "ContactSubmission") AS contacts,
+        COALESCE((SELECT SUM(total) FROM "Order"), 0) AS revenue
+    `;
+    res.json({
+      products: Number(overview?.products || 0),
+      orders: Number(overview?.orders || 0),
+      users: Number(overview?.users || 0),
+      contacts: Number(overview?.contacts || 0),
+      revenue: Number(overview?.revenue || 0)
+    });
+  } catch (e) { next(e); }
 });
 
 app.get("/api/admin/home-settings", auth(Role.ADMIN), async (_req, res, next) => {
@@ -1059,14 +1109,12 @@ app.post("/api/uploads/image", auth(Role.ADMIN), async (req, res, next) => {
     if (!match) return res.status(400).json({ message: "Choose a PNG, JPG, WEBP or GIF image file." });
     const buffer = Buffer.from(match[3], "base64");
     if (buffer.length > 10 * 1024 * 1024) return res.status(400).json({ message: "Image must be 10 MB or smaller." });
-    try {
-      await fs.mkdir(uploadsDir, { recursive: true });
-      const ext = match[2].replace("jpeg", "jpg");
-      const base = slugify(path.parse(req.body.filename || "upload").name || "upload", { lower: true, strict: true });
-      const filename = `${Date.now()}-${base}.${ext}`;
-      await fs.writeFile(path.join(uploadsDir, filename), buffer);
-    } catch {}
-    res.status(201).json({ url: req.body.dataUrl });
+    await fs.mkdir(uploadsDir, { recursive: true });
+    const ext = match[2].replace("jpeg", "jpg");
+    const base = slugify(path.parse(req.body.filename || "upload").name || "upload", { lower: true, strict: true }) || "upload";
+    const filename = `${Date.now()}-${base}.${ext}`;
+    await fs.writeFile(path.join(uploadsDir, filename), buffer);
+    res.status(201).json({ url: `/uploads/${filename}` });
   } catch (e) { next(e); }
 });
 
@@ -1156,24 +1204,36 @@ app.post("/api/products/bulk-upload", auth(Role.ADMIN), async (req, res, next) =
 
 app.get("/api/products", async (req, res) => {
   const { category, search, sort = "newest", featured } = req.query;
+  const whereClauses = [Prisma.sql`p.active = true`];
+  if (category) whereClauses.push(Prisma.sql`c.slug = ${String(category)}`);
+  if (featured === "true") whereClauses.push(Prisma.sql`p.featured = true`);
+  if (search) whereClauses.push(Prisma.sql`(p.name ILIKE ${`${search}%`} OR p."shortDescription" ILIKE ${`%${search}%`})`);
   const orderBy = sort === "price-low"
-    ? { discountPrice: "asc" }
+    ? Prisma.sql`p."discountPrice" ASC NULLS LAST, p.price ASC`
     : sort === "price-high"
-    ? { discountPrice: "desc" }
+    ? Prisma.sql`p."discountPrice" DESC NULLS LAST, p.price DESC`
     : sort === "bestsellers"
-    ? { bestseller: "desc" }
+    ? Prisma.sql`p.bestseller DESC, p."createdAt" DESC`
     : sort === "name" || sort === "alpha"
-    ? { name: "asc" }
-    : { createdAt: "desc" };
-  const products = await prisma.product.findMany({
-    where: {
-      active: true,
-      ...(category ? { category: { slug: category } } : {}),
-      ...(featured === "true" ? { featured: true } : {}),
-      ...(search ? { OR: [{ name: { startsWith: search, mode: "insensitive" } }, { shortDescription: { contains: search, mode: "insensitive" } }] } : {})
-    }, include: { category: true }, orderBy
-  });
-  res.json(products.map(productShape));
+    ? Prisma.sql`p.name ASC`
+    : Prisma.sql`p."createdAt" DESC`;
+  const products = await prisma.$queryRaw(Prisma.sql`
+    SELECT
+      p.id, p.name, p.slug, p.sku, p.unit, p."shortDescription", p.description,
+      p.benefits, p.usage, p.price, p."discountPrice", p.weight, p.stock,
+      CASE WHEN p.image LIKE 'data:image/%' THEN '/samruddhi-hero.png' ELSE p.image END AS image,
+      p."metaTitle", p."metaDescription", p."seoKeywords", p.featured, p.bestseller,
+      p.active, p."categoryId", p."createdAt", p."updatedAt",
+      c.id AS category_id, c.name AS category_name, c.slug AS category_slug,
+      c.description AS category_description,
+      CASE WHEN c.image LIKE 'data:image/%' THEN '/samruddhi-hero.png' ELSE c.image END AS category_image,
+      c."createdAt" AS "category_createdAt"
+    FROM "Product" p
+    JOIN "Category" c ON c.id = p."categoryId"
+    WHERE ${Prisma.join(whereClauses, Prisma.sql` AND `)}
+    ORDER BY ${orderBy}
+  `);
+  res.json(productRows(products));
 });
 app.get("/api/products/:slug", async (req, res) => {
   const product = await prisma.product.findFirst({ where: { slug: req.params.slug, active: true }, include: { category: true } });
@@ -1190,11 +1250,13 @@ app.post("/api/products", auth(Role.ADMIN), async (req, res, next) => {
 });
 app.put("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
   try {
-    const data = productData(req.body);
+    const id = Number(req.params.id);
+    const existing = await prisma.product.findUnique({ where: { id }, select: { image: true } });
+    const data = productData({ ...req.body, image: req.body.image || existing?.image });
     const error = requireProduct(data);
     if (error) return res.status(400).json({ message: error });
-    const product = await prisma.product.update({ where: { id: Number(req.params.id) }, data, include: { category: true } });
-    res.json(productShape(product));
+    const product = await prisma.product.update({ where: { id }, data, include: { category: true } });
+    res.json(safeProductShape(product));
   } catch (e) { next(e); }
 });
 app.delete("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
