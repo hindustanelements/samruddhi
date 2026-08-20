@@ -1,7 +1,7 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const apiTarget = process.env.API_PROXY_TARGET || "http://localhost:5000";
+const apiTarget = process.env.API_PROXY_TARGET || "http://127.0.0.1:5000";
 const appRoot = dirname(fileURLToPath(import.meta.url));
 
 /** @type {import('next').NextConfig} */

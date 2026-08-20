@@ -3,6 +3,8 @@ set -e
 
 echo "Starting application: backend + frontend"
 
+export API_PROXY_TARGET=${API_PROXY_TARGET:-http://127.0.0.1:5000}
+
 # Start backend
 cd /app/backend
 export PORT=${PORT:-5000}

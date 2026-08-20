@@ -11,7 +11,7 @@ const { PrismaClient } = prismaPackage;
 const prisma = new PrismaClient();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
-const uploadsDir = process.env.UPLOADS_DIR || path.join(publicDir, "uploads");
+const uploadsDir = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(publicDir, "uploads");
 const dryRun = process.argv.includes("--dry-run");
 const batchSize = Number(process.env.IMAGE_MIGRATION_BATCH_SIZE || 10);
 

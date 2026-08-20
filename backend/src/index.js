@@ -20,7 +20,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, "../public");
-const uploadsDir = process.env.UPLOADS_DIR || path.join(publicDir, "uploads");
+const uploadsDir = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(publicDir, "uploads");
 const secret = process.env.JWT_SECRET || "development-only-secret";
 const smtpHost = process.env.SMTP_HOST;
 const smtpPort = Number(process.env.SMTP_PORT || 587);
@@ -318,7 +318,7 @@ const rowsFromCsv = (buffer) => {
 };
 const uploadBufferFromBody = (body) => {
   const match = String(body.dataUrl || "").match(/^data:[^;]+;base64,([A-Za-z0-9+/=]+)$/);
-  if (!match) throw new Error("Upload a valid CSV or XLSX file.");
+  if (!match) throw new Error("Upload a valid file with content.");
   return Buffer.from(match[1], "base64");
 };
 const importRowsFromUpload = (body) => {
@@ -593,6 +593,7 @@ const validateUploadedSettingImage = (image, label) => {
   return "";
 };
 const ensureDatabaseShape = async () => {
+  await fs.mkdir(uploadsDir, { recursive: true }).catch(() => {});
   await prisma.$executeRaw`ALTER TYPE "PaymentMethod" ADD VALUE IF NOT EXISTS 'ONLINE'`;
   await prisma.$executeRaw`ALTER TABLE "HeroSlide" ADD COLUMN IF NOT EXISTS "categoryId" integer`;
   await prisma.$executeRaw`
