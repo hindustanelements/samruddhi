@@ -1,7 +1,7 @@
 import "../styles.css";
 
 export const metadata = {
-  title: "Samruddhi organic products ",
+  title: "Samruddhi - From farm to Kitchen ",
   description: "Natural pantry essentials and traditional kitchenware.",
   icons: {
     icon: "/favicon.png"

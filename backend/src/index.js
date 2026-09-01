@@ -8,13 +8,13 @@ import slugify from "slugify";
 import nodemailer from "nodemailer";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import prismaPackage from "@prisma/client";
 
 const { PrismaClient, Role, Prisma } = prismaPackage;
-
 const prisma = new PrismaClient();
 const app = express();
 const port = process.env.PORT || 5000;
@@ -155,8 +155,6 @@ const productData = (body) => ({
 });
 const requireProduct = (data) => {
   if (!data.name) return "Product name is required.";
-  if (!data.sku) return "Product SKU is required.";
-  if (!data.unit) return "Product unit is required.";
   if (!data.categoryId) return "Product category is required.";
   if (!data.weight) return "Product weight / size is required.";
   if (!Number.isFinite(data.price)) return "Product price is required.";
@@ -512,10 +510,27 @@ const validateCoupon = async (code, subtotal) => {
   if (subtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - subtotal} more to use this coupon.`);
   return { coupon, discount: couponDiscount(coupon, subtotal) };
 };
-const orderTotals = async ({ items, couponCode }) => {
+const orderTotals = async ({ items, couponCode, customer }) => {
   const rows = await cartRows(items);
   const subtotal = rows.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0);
-  const delivery = 0;
+  let delivery = 0;
+  
+  if (customer && customer.state && customer.city) {
+    const state = customer.state.toLowerCase();
+    const city = customer.city.toLowerCase();
+    const isAP = state.includes("ap") || state.includes("andhra");
+    const isTS = state.includes("ts") || state.includes("telangana");
+    const isVizag = city.includes("vizag") || city.includes("visakhapatnam");
+
+    if (!isAP && !isTS) {
+      throw new Error("We currently deliver exclusively within Andhra Pradesh (AP) and Telangana (TS).");
+    }
+
+    if (isVizag) {
+      delivery = subtotal >= 2500 ? 0 : 60;
+    }
+  }
+
   const { coupon, discount } = await validateCoupon(couponCode, subtotal);
   return { rows, subtotal, delivery, coupon, discount, total: subtotal + delivery - discount };
 };
@@ -596,6 +611,8 @@ const ensureDatabaseShape = async () => {
   await fs.mkdir(uploadsDir, { recursive: true }).catch(() => {});
   await prisma.$executeRaw`ALTER TYPE "PaymentMethod" ADD VALUE IF NOT EXISTS 'ONLINE'`;
   await prisma.$executeRaw`ALTER TABLE "HeroSlide" ADD COLUMN IF NOT EXISTS "categoryId" integer`;
+  await prisma.$executeRaw`CREATE EXTENSION IF NOT EXISTS pg_trgm`;
+  await prisma.$executeRaw`CREATE INDEX IF NOT EXISTS "Product_name_trgm_idx" ON "Product" USING gin (name gin_trgm_ops)`;
   await prisma.$executeRaw`
     CREATE TABLE IF NOT EXISTS "SiteSetting" (
       key text PRIMARY KEY,
@@ -1016,7 +1033,7 @@ app.post("/api/payments/razorpay/order", async (req, res, next) => {
       return res.status(503).json({ message: "Online payment is not configured." });
     }
 
-    const totals = await orderTotals({ items: req.body.items, couponCode: req.body.couponCode });
+    const totals = await orderTotals({ items: req.body.items, couponCode: req.body.couponCode, customer: req.body.customer });
     if (totals.total <= 0) return res.status(400).json({ message: "Order total must be greater than zero for online payment." });
 
     const receipt = `SAM${Date.now().toString().slice(-8)}`;
@@ -1215,6 +1232,38 @@ app.post("/api/products/bulk-upload", auth(Role.ADMIN), async (req, res, next) =
   } catch (e) { next(e); }
 });
 
+app.get("/api/products/search/suggest", async (req, res, next) => {
+  try {
+    const q = (req.query.q || "").trim();
+    if (!q) return res.json([]);
+
+    const pattern = `%${q}%`;
+    const suggestions = await prisma.$queryRaw`
+      SELECT p.id, p.name, p.slug,
+             SIMILARITY(p.name, ${q}) AS score
+      FROM "Product" p
+      JOIN "Category" c ON c.id = p."categoryId"
+      WHERE p.active = true AND (
+        p.name ILIKE ${pattern} OR 
+        c.name ILIKE ${pattern} OR 
+        p."seoKeywords" ILIKE ${pattern} OR 
+        SIMILARITY(p.name, ${q}) > 0.12
+      )
+      ORDER BY 
+        CASE WHEN p.name ILIKE ${pattern} THEN 1 ELSE 2 END,
+        SIMILARITY(p.name, ${q}) DESC,
+        p.name ASC
+      LIMIT 8
+    `;
+
+    res.json(suggestions.map((s) => ({
+      id: s.id,
+      name: s.name,
+      slug: s.slug
+    })));
+  } catch (e) { next(e); }
+});
+
 app.get("/api/products", async (req, res) => {
   const { category, search, sort = "newest", featured } = req.query;
   const whereClauses = [Prisma.sql`p.active = true`];
@@ -1243,7 +1292,7 @@ app.get("/api/products", async (req, res) => {
       c."createdAt" AS "category_createdAt"
     FROM "Product" p
     JOIN "Category" c ON c.id = p."categoryId"
-    WHERE ${Prisma.join(whereClauses, Prisma.sql` AND `)}
+    WHERE ${Prisma.join(whereClauses, " AND ")}
     ORDER BY ${orderBy}
   `);
   res.json(productRows(products));
@@ -1272,6 +1321,16 @@ app.put("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
     res.json(safeProductShape(product));
   } catch (e) { next(e); }
 });
+app.patch("/api/products/:id/toggle-stock", auth(Role.ADMIN), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const current = await prisma.product.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ message: "Product not found." });
+    const newStock = current.stock > 0 ? 0 : (req.body.stock ? Number(req.body.stock) : 10);
+    const product = await prisma.product.update({ where: { id }, data: { stock: newStock }, include: { category: true } });
+    res.json(productShape(product));
+  } catch (e) { next(e); }
+});
 app.delete("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -1289,7 +1348,7 @@ app.post("/api/orders", async (req, res, next) => {
   try {
     const { customer, items, paymentMethod = "COD", couponCode, razorpay } = req.body;
     const method = paymentMethod === "ONLINE" ? "ONLINE" : "COD";
-    const { rows, subtotal, delivery, coupon, discount, total } = await orderTotals({ items, couponCode });
+    const { rows, subtotal, delivery, coupon, discount, total } = await orderTotals({ items, couponCode, customer });
 
     if (method === "ONLINE") {
       if (!verifyRazorpayPayment(razorpay || {})) return res.status(400).json({ message: "Online payment verification failed." });

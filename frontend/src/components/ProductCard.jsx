@@ -8,11 +8,14 @@ import { money } from "../lib/store";
 export default function ProductCard({ product }) {
   const { add } = useApp();
   const price = product.discountPrice || product.price;
+  const isOutOfStock = Number(product.stock) <= 0;
+
   return <article className="group overflow-hidden rounded-[1.6rem] border border-forest/10 bg-white transition duration-300 hover:-translate-y-1 hover:shadow-soft">
     <Link to={`/products/${product.slug}`} className="relative block aspect-[4/3] overflow-hidden bg-white">
-      <img src={product.image} alt={`${product.name} by Samruddhi`} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" onError={(e)=>{e.currentTarget.src="/samruddhi-hero.png"}}/>
-      {product.bestseller && <span className="absolute left-3 top-3 rounded-full bg-turmeric px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-forest">Bestseller</span>}
-      <button aria-label="Save product" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-forest opacity-0 transition group-hover:opacity-100"><Heart size={17}/></button>
+      <img src={product.image} alt={`${product.name} by Samruddhi`} className={`h-full w-full object-cover transition duration-700 group-hover:scale-105 ${isOutOfStock ? "grayscale filter" : ""}`} onError={(e)=>{e.currentTarget.src="/samruddhi-hero.png"}}/>
+      {product.bestseller && !isOutOfStock && <span className="absolute left-3 top-3 rounded-full bg-turmeric px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-forest">Bestseller</span>}
+      {isOutOfStock && <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white font-black text-sm uppercase tracking-widest backdrop-blur-[2px]">Out of Stock</div>}
+      <button aria-label="Save product" className="absolute right-3 top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-forest opacity-0 transition group-hover:opacity-100 z-10"><Heart size={17}/></button>
     </Link>
     <div className="p-5">
       <p className="text-[10px] font-bold uppercase tracking-[.18em] text-clay">{product.category?.name}</p>
@@ -20,7 +23,7 @@ export default function ProductCard({ product }) {
       <p className="mt-2 line-clamp-2 text-sm leading-6 text-ink/60">{product.shortDescription}</p>
       <div className="mt-4 flex items-center justify-between gap-3">
         <div className="min-w-0"><span className="whitespace-nowrap font-display text-xl font-bold text-forest">{money(price)}</span>{product.discountPrice && <span className="ml-2 whitespace-nowrap text-xs text-ink/40 line-through">{money(product.price)}</span>}<p className="truncate text-xs text-ink/45">{product.weight}</p></div>
-        <button onClick={()=>add(product)} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-forest text-white transition hover:rotate-6 hover:bg-clay"><Plus size={20}/></button>
+        <button disabled={isOutOfStock} onClick={()=>add(product)} className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-white transition ${isOutOfStock ? "bg-gray-300 cursor-not-allowed" : "bg-forest hover:rotate-6 hover:bg-clay"}`} title={isOutOfStock ? "Out of Stock" : "Add to Basket"}><Plus size={20}/></button>
       </div>
     </div>
   </article>;

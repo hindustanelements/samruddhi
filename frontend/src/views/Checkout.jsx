@@ -15,6 +15,7 @@ function Checkout() {
     email: user?.email || "",
     address: user?.address || "",
     city: user?.city || "",
+    state: user?.state || "Andhra Pradesh",
     pincode: user?.pincode || ""
   });
   const [busy, setBusy] = useState(false);
@@ -25,7 +26,10 @@ function Checkout() {
   const [couponBusy, setCouponBusy] = useState(false);
   const [paymentStep, setPaymentStep] = useState(false);
   const subtotal = cart.reduce((s, x) => s + (x.discountPrice || x.price) * x.quantity, 0);
-  const delivery = 0;
+  const isVizag = form.city.toLowerCase().includes("vizag") || form.city.toLowerCase().includes("visakhapatnam");
+  const delivery = isVizag ? (subtotal >= 2500 ? 0 : 60) : 0;
+  const displayDelivery = isVizag ? (delivery === 0 ? "Free" : money(delivery)) : "+ delivery";
+  const displayTotal = isVizag ? money(subtotal + delivery - (coupon?.discount || 0)) : `${money(subtotal - (coupon?.discount || 0))} + delivery`;
   const discount = coupon?.discount || 0;
 
   const orderItems = () => cart.map((x) => ({ productId: x.id, quantity: x.quantity }));
@@ -87,7 +91,7 @@ function Checkout() {
           contact: form.mobile
         },
         notes: {
-          address: `${form.address}, ${form.city} - ${form.pincode}`
+          address: `${form.address}, ${form.city}, ${form.state} - ${form.pincode}`
         },
         theme: { color: "#24533f" },
         handler: async (response) => {
@@ -146,11 +150,12 @@ function Checkout() {
     <h1 className="mt-2 text-4xl text-forest">Customer details</h1>
     <div className="mt-8 grid gap-4 sm:grid-cols-2">{[["customerName","Full name"],["mobile","Mobile number"],["email","Email address"],["city","City"],["pincode","Pincode"]].map(([n,p])=><label key={n}>
     <span className="mb-2 block text-sm font-semibold text-forest">{p}</span><input required name={n} value={form[n]} onChange={e=>setForm({...form,[n]:e.target.value})} className="field"/></label>) }
+    <label key="state"><span className="mb-2 block text-sm font-semibold text-forest">State</span><select required name="state" value={form.state} onChange={e=>setForm({...form, state:e.target.value})} className="field"><option value="Andhra Pradesh">Andhra Pradesh</option><option value="Telangana">Telangana</option></select></label>
     <label className="sm:col-span-2"><span className="mb-2 block text-sm font-semibold text-forest">Complete delivery address</span><textarea required value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="field min-h-28"/></label></div>
     <div className="mt-9 rounded-2xl border border-forest/10 bg-white p-4"><label className="text-sm font-semibold text-forest">Coupon code</label><div className="mt-3 flex flex-col gap-3 sm:flex-row"><input value={couponCode} onChange={e=>setCouponCode(e.target.value.toUpperCase())} className="field" placeholder="Enter coupon code"/><button type="button" onClick={applyCoupon} disabled={couponBusy || !couponCode.trim()} className="btn-light shrink-0">{couponBusy?"Checking...":"Apply"}</button></div>{couponMessage&&<p className={`mt-3 text-sm ${coupon?"text-forest":"text-red-600"}`}>{couponMessage}</p>}</div>
     {error&&<p className="mt-4 text-sm text-red-600">{error}</p>}<button disabled={busy} className="btn-primary mt-8 w-full sm:w-auto">{paymentStep?"Update details":"Proceed to payment"} <ArrowRight size={17}/></button>
     {paymentStep&&<div className="mt-6 grid gap-3 rounded-2xl border border-forest/10 bg-white p-4 sm:grid-cols-2"><button type="button" disabled={busy} onClick={startOnlinePayment} className="btn-primary w-full justify-center">{busy?"Starting...":"Pay online"}</button><button type="button" disabled={busy} onClick={placeCodOrder} className="btn-light w-full justify-center">{busy?"Placing...":"Cash on delivery"}</button></div>}</form>
-    <aside className="card h-fit p-6"><h2 className="text-2xl text-forest">Your order</h2><div className="mt-5 max-h-72 space-y-4 overflow-auto">{cart.map(x=><div key={x.id} className="flex gap-3"><img src={x.image} className="aspect-[4/3] h-14 w-14 rounded-xl border border-forest/10 bg-white object-cover" alt={x.name}/><div className="flex-1"><p className="text-sm font-semibold">{x.name}</p><p className="text-xs text-ink/45">{x.weight} - Qty {x.quantity}</p></div><span className="text-sm font-bold">{money((x.discountPrice||x.price)*x.quantity)}</span></div>)}</div><div className="mt-5 space-y-2 border-t pt-5 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>{discount>0&&<div className="flex justify-between text-forest"><span>Coupon discount</span><span>-{money(discount)}</span></div>}<div className="flex justify-between"><span>Delivery</span><span>Free</span></div><div className="flex justify-between pt-2 text-lg font-bold"><span>Total</span><span>{money(subtotal+delivery-discount)}</span></div></div></aside></div></main>;
+    <aside className="card h-fit p-6"><h2 className="text-2xl text-forest">Your order</h2><div className="mt-5 max-h-72 space-y-4 overflow-auto">{cart.map(x=><div key={x.id} className="flex gap-3"><img src={x.image} className="aspect-[4/3] h-14 w-14 rounded-xl border border-forest/10 bg-white object-cover" alt={x.name}/><div className="flex-1"><p className="text-sm font-semibold">{x.name}</p><p className="text-xs text-ink/45">{x.weight} - Qty {x.quantity}</p></div><span className="text-sm font-bold">{money((x.discountPrice||x.price)*x.quantity)}</span></div>)}</div><div className="mt-5 space-y-2 border-t pt-5 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>{discount>0&&<div className="flex justify-between text-forest"><span>Coupon discount</span><span>-{money(discount)}</span></div>}<div className="flex justify-between"><span>Delivery</span><span>{displayDelivery}</span></div><div className="flex justify-between pt-2 text-lg font-bold"><span>Total</span><span>{displayTotal}</span></div></div>{isVizag && subtotal < 2500 && <div className="mt-4 rounded-xl bg-forest/5 p-3"><p className="text-xs text-forest font-semibold">🚚 Add {money(2500 - subtotal)} more for FREE delivery!</p><div className="mt-2 h-2 rounded-full bg-forest/10 overflow-hidden"><div className="h-full rounded-full bg-forest transition-all" style={{width:`${Math.min(100, (subtotal / 2500) * 100)}%`}}/></div></div>}{isVizag && subtotal >= 2500 && <p className="mt-4 text-xs text-forest font-semibold text-center">🎉 You qualify for FREE delivery!</p>}{!isVizag && <p className="mt-4 text-xs text-ink/50 text-center">Delivery charges will be confirmed after order placement.</p>}</aside></div></main>;
 }
 
 export default Checkout;

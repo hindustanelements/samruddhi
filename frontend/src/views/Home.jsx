@@ -74,7 +74,7 @@ function Home() {
 
     <section className="container-site py-20">
       <SectionHead eyebrow="Shop by range" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
-      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
     </section>
 
     {showcaseProducts.length > 0 && <section className="bg-white py-20"><div className="container-site">
