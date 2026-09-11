@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bell, ChevronDown, Eye, Images, LayoutDashboard, Mail, Package, PackageCheck, PackageX, Pencil, Phone, Plus, Save, Search, ShieldCheck, ShoppingBag, Sparkles, Store, TicketPercent, Trash2, Upload, Users, Volume2, VolumeX, Wheat } from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { categoryImage, money, request } from "../lib/store";
+import { categoryImage, enableAdminPush, money, request } from "../lib/store";
 
 let audioCtx = null;
 let ringTimeout = null;
@@ -99,6 +99,7 @@ function Admin() {
   const [searchTerm,setSearchTerm]=useState("");
   const [activeRingOrder,setActiveRingOrder]=useState(null);
   const [ackOrderIds,setAckOrderIds]=useState(new Set());
+  const [pushStatus,setPushStatus]=useState("");
 
   const stopAlarm=()=>{
     stopRingingAlarm();
@@ -109,10 +110,21 @@ function Admin() {
   };
 
   const testBrowserAlarm=()=>{
+    enableAdminPush().then(()=>setPushStatus("Order alerts enabled")).catch(()=>{});
     const mock={id:"test-"+Date.now(),orderNumber:"TEST"+Date.now().toString().slice(-4),customerName:"Sample Customer",total:1499};
     setActiveRingOrder(mock);
     startRingingAlarm();
-  };  useEffect(()=>{
+  };
+  const enableOrderAlerts=async()=>{
+    setPushStatus("Enabling...");
+    try {
+      await enableAdminPush();
+      setPushStatus("Order alerts enabled");
+    } catch (error) {
+      setPushStatus(error.message);
+    }
+  };
+  useEffect(()=>{
     if(user?.role!=="ADMIN") return;
     const checkOrders=async()=>{
       try{

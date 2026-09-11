@@ -13,6 +13,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 import prismaPackage from "@prisma/client";
+import webpush from "web-push";
 
 const { PrismaClient, Role, Prisma } = prismaPackage;
 const prisma = new PrismaClient();
@@ -45,10 +46,42 @@ const customerPasswordOtps = new Map();
 const customerPasswordOtpTtlMs = 10 * 60 * 1000;
 const couponsReady = () => Boolean(prisma.coupon);
 const pendingRazorpayOrders = new Map();
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+const vapidSubject = process.env.VAPID_SUBJECT || "mailto:hindustanelements98@gmail.com";
+const pushConfigured = Boolean(vapidPublicKey && vapidPrivateKey);
+if (pushConfigured) webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
 const sendEmail = async ({ to, subject, text, html }) => {
   if (!transporter || !to) return;
   await transporter.sendMail({ from: smtpFrom, to, subject, text, html });
+};
+
+const sendNewOrderPush = async (order) => {
+  if (!pushConfigured) return;
+  const subscriptions = await prisma.pushSubscription.findMany({
+    select: { id: true, endpoint: true, p256dh: true, auth: true }
+  });
+  const payload = JSON.stringify({
+    title: "New Samruddhi order",
+    body: `Order ${order.orderNumber} from ${order.customerName} - ${Number(order.total).toLocaleString("en-IN")} INR`,
+    orderNumber: order.orderNumber,
+    url: "/admin?tab=orders"
+  });
+  await Promise.all(subscriptions.map(async (subscription) => {
+    try {
+      await webpush.sendNotification({
+        endpoint: subscription.endpoint,
+        keys: { p256dh: subscription.p256dh, auth: subscription.auth }
+      }, payload);
+    } catch (error) {
+      if (error.statusCode === 404 || error.statusCode === 410) {
+        await prisma.pushSubscription.delete({ where: { id: subscription.id } }).catch(() => {});
+      } else {
+        console.error("Order push notification failed:", error.message);
+      }
+    }
+  }));
 };
 
 app.use(cors({ origin: process.env.CLIENT_URL?.split(",") || true }));
@@ -655,6 +688,25 @@ const homeSettingsShape = async () => {
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", database: "postgresql" }));
 
+app.get("/api/push/public-key", auth(Role.ADMIN), (_req, res) => {
+  if (!pushConfigured) return res.status(503).json({ message: "Push notifications are not configured." });
+  res.json({ publicKey: vapidPublicKey });
+});
+
+app.post("/api/push/subscribe", auth(Role.ADMIN), async (req, res, next) => {
+  try {
+    if (!pushConfigured) return res.status(503).json({ message: "Push notifications are not configured." });
+    const { endpoint, keys } = req.body.subscription || {};
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return res.status(400).json({ message: "Invalid push subscription." });
+    await prisma.pushSubscription.upsert({
+      where: { endpoint },
+      update: { userId: req.auth.id, p256dh: keys.p256dh, auth: keys.auth },
+      create: { userId: req.auth.id, endpoint, p256dh: keys.p256dh, auth: keys.auth }
+    });
+    res.status(201).json({ enabled: true });
+  } catch (e) { next(e); }
+});
+
 app.post("/api/auth/register", async (req, res, next) => {
   try {
     const { name, email, mobile, password } = req.body;
@@ -1244,13 +1296,23 @@ app.get("/api/products/search/suggest", async (req, res, next) => {
       FROM "Product" p
       JOIN "Category" c ON c.id = p."categoryId"
       WHERE p.active = true AND (
-        p.name ILIKE ${pattern} OR 
-        c.name ILIKE ${pattern} OR 
-        p."seoKeywords" ILIKE ${pattern} OR 
+        p.name ILIKE ${pattern} OR
+        c.name ILIKE ${pattern} OR
+        p.sku ILIKE ${pattern} OR
+        p."shortDescription" ILIKE ${pattern} OR
+        p.description ILIKE ${pattern} OR
+        p."metaTitle" ILIKE ${pattern} OR
+        p."metaDescription" ILIKE ${pattern} OR
+        p."seoKeywords" ILIKE ${pattern} OR
         SIMILARITY(p.name, ${q}) > 0.12
       )
       ORDER BY 
-        CASE WHEN p.name ILIKE ${pattern} THEN 1 ELSE 2 END,
+        CASE
+          WHEN p.name ILIKE ${`${q}%`} THEN 1
+          WHEN p.name ILIKE ${pattern} THEN 2
+          WHEN c.name ILIKE ${pattern} THEN 3
+          ELSE 4
+        END,
         SIMILARITY(p.name, ${q}) DESC,
         p.name ASC
       LIMIT 8
@@ -1266,11 +1328,30 @@ app.get("/api/products/search/suggest", async (req, res, next) => {
 
 app.get("/api/products", async (req, res) => {
   const { category, search, sort = "newest", featured } = req.query;
+  const searchTerm = String(search || "").trim();
+  const searchPattern = `%${searchTerm}%`;
+  const searchPrefix = `${searchTerm}%`;
   const whereClauses = [Prisma.sql`p.active = true`];
   if (category) whereClauses.push(Prisma.sql`c.slug = ${String(category)}`);
   if (featured === "true") whereClauses.push(Prisma.sql`p.featured = true`);
-  if (search) whereClauses.push(Prisma.sql`(p.name ILIKE ${`${search}%`} OR p."shortDescription" ILIKE ${`%${search}%`})`);
-  const orderBy = sort === "price-low"
+  if (searchTerm) whereClauses.push(Prisma.sql`(
+    p.name ILIKE ${searchPattern} OR
+    c.name ILIKE ${searchPattern} OR
+    p.sku ILIKE ${searchPattern} OR
+    p."shortDescription" ILIKE ${searchPattern} OR
+    p.description ILIKE ${searchPattern} OR
+    p."metaTitle" ILIKE ${searchPattern} OR
+    p."metaDescription" ILIKE ${searchPattern} OR
+    p."seoKeywords" ILIKE ${searchPattern}
+  )`);
+  const orderBy = searchTerm
+    ? Prisma.sql`CASE
+        WHEN p.name ILIKE ${searchPrefix} THEN 1
+        WHEN p.name ILIKE ${searchPattern} THEN 2
+        WHEN c.name ILIKE ${searchPattern} THEN 3
+        ELSE 4
+      END, p.name ASC`
+    : sort === "price-low"
     ? Prisma.sql`p."discountPrice" ASC NULLS LAST, p.price ASC`
     : sort === "price-high"
     ? Prisma.sql`p."discountPrice" DESC NULLS LAST, p.price DESC`
@@ -1371,6 +1452,9 @@ app.post("/api/orders", async (req, res, next) => {
       subject: `Order ${order.orderNumber} confirmed`,
       text: `Your Samruddhi order ${order.orderNumber} has been placed successfully.`,
       html: `<p>Your Samruddhi order <strong>${order.orderNumber}</strong> has been placed successfully.</p>`
+    });
+    await sendNewOrderPush(order).catch((error) => {
+      console.error("New order push delivery failed:", error.message);
     });
 
     res.status(201).json(order);

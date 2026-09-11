@@ -35,3 +35,19 @@ export const loadProduct = (slug) => request(`/products/${slug}`);
 export const loadHeroSlides = () => request("/hero-slides");
 export const loadHomeSettings = () => request("/home-settings");
 export const categoryImage = (category) => category.image || fallbackCategoryImages[category.name] || "/samruddhi-hero.png";
+
+export const enableAdminPush = async () => {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("Push notifications are not supported by this browser.");
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("Notification permission was not granted.");
+  const registration = await navigator.serviceWorker.register("/push-sw.js");
+  const { publicKey } = await request("/push/public-key");
+  const base64 = publicKey.replace(/-/g, "+").replace(/_/g, "/");
+  const paddedBase64 = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const applicationServerKey = Uint8Array.from(atob(paddedBase64), (char) => char.charCodeAt(0));
+  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  await request("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) });
+  return true;
+};
