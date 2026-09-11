@@ -1,0 +1,2 @@
+ALTER TABLE "Order"
+ADD COLUMN IF NOT EXISTS "state" TEXT NOT NULL DEFAULT 'Andhra Pradesh';

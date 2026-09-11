@@ -34,7 +34,7 @@ WORKDIR /app/backend
 
 COPY backend/package*.json ./
 
-RUN npm ci --omit=dev
+RUN npm ci
 
 # =====================================================
 # Stage 4 - Production Image
@@ -46,6 +46,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 RUN apk add --no-cache bash
+
+# The deployment platform must attach a persistent volume here. Uploaded
+# product and admin images are intentionally stored outside PostgreSQL.
+VOLUME ["/app/backend/public/uploads"]
 
 # ===========================
 # Backend
