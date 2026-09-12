@@ -82,7 +82,7 @@ function Admin() {
   const [adminUsers,setAdminUsers]=useState([]);
   const [customers,setCustomers]=useState({count:0,customers:[]});
   const [overview,setOverview]=useState({products:0,orders:0,users:0,contacts:0,revenue:0});
-  const [homeSettings,setHomeSettings]=useState({showcaseCategoryId:""});
+  const [homeSettings,setHomeSettings]=useState({showcaseCategoryId:"",storeOpen:true});
   const [editing,setEditing]=useState(null);
   const [categoryEditing,setCategoryEditing]=useState(null);
   const [categoryForm,setCategoryForm]=useState({name:"",image:""});
@@ -110,7 +110,7 @@ function Admin() {
   };
 
   const testBrowserAlarm=()=>{
-    enableAdminPush().then(()=>setPushStatus("Order alerts enabled")).catch(()=>{});
+    enableAdminPush().then(()=>setPushStatus("Order alerts enabled")).catch((error)=>{setPushStatus(error.message);window.alert(error.message)});
     const mock={id:"test-"+Date.now(),orderNumber:"TEST"+Date.now().toString().slice(-4),customerName:"Sample Customer",total:1499};
     setActiveRingOrder(mock);
     startRingingAlarm();
@@ -159,6 +159,7 @@ function Admin() {
   const toggleProductStockAdmin=async(product)=>{const newStock=Number(product.stock)>0?0:10;setProducts(prev=>prev.map(p=>p.id===product.id?{...p,stock:newStock}:p));await runAdminAction(async()=>{await request(`/products/${product.id}/toggle-stock`,{method:"PATCH",body:JSON.stringify({stock:newStock})});await request("/products?sort=name").then(setProducts);},true);};
   const updateProductCategoryAdmin=async(product,categoryId)=>{const newCategoryId=Number(categoryId);const newCategory=categories.find(c=>c.id===newCategoryId);setProducts(prev=>prev.map(p=>p.id===product.id?{...p,categoryId:newCategoryId,category:newCategory||p.category}:p));await runAdminAction(async()=>{const data={...product,categoryId:newCategoryId};delete data.image;await request(`/products/${product.id}`,{method:"PUT",body:JSON.stringify(data)});await request("/products?sort=name").then(setProducts);}, true)};
   const updateStatusAdmin=async(id,status)=>runAdminAction(async()=>{await request(`/orders/${id}/status`,{method:"PATCH",body:JSON.stringify({status})});await request("/orders").then(setOrders);}, true);
+  const toggleStore=async()=>{await runAdminAction(async()=>{await request("/admin/home-settings",{method:"PUT",body:JSON.stringify({showcaseCategoryId:homeSettings.showcaseCategoryId,storeOpen:!homeSettings.storeOpen})});await request("/admin/home-settings").then(setHomeSettings);}, true)};
   const beginHeroSlide=(slide={})=>{setHeroEditing(slide);setHeroForm({eyebrow:slide.eyebrow||"",title:slide.title||"",body:slide.body||"",link:slide.link||"/products",cta:slide.cta||"Shop category",tone:slide.tone||"",image:slide.image||"",highlights:Array.isArray(slide.highlights)?slide.highlights.join(", "):slide.highlights||"",categoryId:slide.categoryId||slide.category?.id||"",sortOrder:slide.sortOrder||heroSlides.length+1,active:slide.active??true});setTab("heroslide")};
   const readFileDataUrl=(file)=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error("Could not read selected file."));reader.readAsDataURL(file)});
   const uploadHeroImage=(file)=>readFileDataUrl(file).then((dataUrl)=>request("/uploads/image",{method:"POST",body:JSON.stringify({filename:file.name,dataUrl})}).then(({url})=>url));
@@ -169,7 +170,7 @@ function Admin() {
   const beginCoupon=(coupon={})=>{setCouponEditing(coupon);setCouponForm({code:coupon.code||"",type:coupon.type||"PERCENT",value:coupon.value||"",minSubtotal:coupon.minSubtotal||"0",maxDiscount:coupon.maxDiscount||"",usageLimit:coupon.usageLimit||"",startsAt:couponDate(coupon.startsAt),expiresAt:couponDate(coupon.expiresAt),active:coupon.active??true});setTab("coupons")};
   const saveCouponAdmin=async(e)=>{e.preventDefault();await runAdminAction(async()=>{await request(couponEditing?.id?`/admin/coupons/${couponEditing.id}`:"/admin/coupons",{method:couponEditing?.id?"PUT":"POST",body:JSON.stringify(couponForm)});setCouponEditing(null);setCouponForm({code:"",type:"PERCENT",value:"",minSubtotal:"0",maxDiscount:"",usageLimit:"",startsAt:"",expiresAt:"",active:true});await loadCoupons();}, true)};
   const deleteCouponAdmin=async(id)=>{if(confirm("Delete this coupon?")) await runAdminAction(async()=>{await request(`/admin/coupons/${id}`,{method:"DELETE"});await loadCoupons();}, true)};
-  const saveHomeSettings=async(e)=>{e.preventDefault();await runAdminAction(async()=>{await request("/admin/home-settings",{method:"PUT",body:JSON.stringify({showcaseCategoryId:homeSettings.showcaseCategoryId})});await request("/admin/home-settings").then(setHomeSettings);}, true)};
+  const saveHomeSettings=async(e)=>{e.preventDefault();await runAdminAction(async()=>{await request("/admin/home-settings",{method:"PUT",body:JSON.stringify({showcaseCategoryId:homeSettings.showcaseCategoryId,storeOpen:homeSettings.storeOpen})});await request("/admin/home-settings").then(setHomeSettings);}, true)};
   const saveAdminUser=async(e)=>{e.preventDefault();await runAdminAction(async()=>{await request("/admin/admins",{method:"POST",body:JSON.stringify(adminForm)});setAdminForm({name:"",email:""});setTab("admins");await Promise.all([request("/admin/admins").then(setAdminUsers),request("/admin/overview").then(setOverview)]);}, true)};
   const removeAdminUser=async(admin)=>{if(confirm(`Remove admin access for ${admin.email}?`)) await runAdminAction(async()=>{await request(`/admin/admins/${admin.id}`,{method:"DELETE"});await Promise.all([request("/admin/admins").then(setAdminUsers),request("/admin/overview").then(setOverview)]);}, true)};
   const searchValue=searchTerm.trim().toLowerCase();

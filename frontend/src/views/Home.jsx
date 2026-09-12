@@ -55,7 +55,7 @@ function Home() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [slides, setSlides] = useState(fallbackHomeSlides);
-  const [homeSettings, setHomeSettings] = useState({showcaseCategoryId:null});
+  const [homeSettings, setHomeSettings] = useState({showcaseCategoryId:null, storeOpen:true});
   const [slide, setSlide] = useState(0);
   const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
@@ -66,6 +66,7 @@ function Home() {
     return () => clearInterval(timer);
   }, [slides.length]);
   return <main>
+    {!homeSettings.storeOpen && <div className="bg-clay px-5 py-4 text-center text-sm font-bold text-white">🙏 Store was closed 🙏</div>}
     <HeroSlider slide={slide} activeSlide={activeSlide}/>
 
     <section className="border-b border-forest/10 bg-white py-7"><div className="container-site grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{[

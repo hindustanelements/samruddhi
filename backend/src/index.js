@@ -670,7 +670,9 @@ const homeSettingsShape = async () => {
   const rows = await prisma.$queryRaw`SELECT value FROM "SiteSetting" WHERE key = 'home_showcase_category_id'`;
   const logoRows = await prisma.$queryRaw`SELECT value FROM "SiteSetting" WHERE key = 'site_logo_images'`;
   const whatsappRows = await prisma.$queryRaw`SELECT value FROM "SiteSetting" WHERE key = 'whatsapp_button_image'`;
+  const storeRows = await prisma.$queryRaw`SELECT value FROM "SiteSetting" WHERE key = 'store_open'`;
   const showcaseCategoryId = rows[0]?.value ? Number(rows[0].value) : null;
+  const storeOpen = storeRows[0]?.value !== "false";
   const whatsappButtonImage = cleanSettingImage(whatsappRows[0]?.value);
   const logoImages = (() => {
     try { return cleanLogoImages(JSON.parse(logoRows[0]?.value || "[]")); }
@@ -683,7 +685,7 @@ const homeSettingsShape = async () => {
     FROM "Category"
     WHERE id = ${showcaseCategoryId}
   ` : [];
-  return { showcaseCategoryId, showcaseCategory: category ? categoryShape(category) : null, logoImages, whatsappButtonImage };
+  return { showcaseCategoryId, showcaseCategory: category ? categoryShape(category) : null, logoImages, whatsappButtonImage, storeOpen };
 };
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", database: "postgresql" }));
@@ -986,6 +988,7 @@ app.put("/api/admin/home-settings", auth(Role.ADMIN), async (req, res, next) => 
     const logoError = validateLogoImages(logoImages);
     if (logoError) return res.status(400).json({ message: logoError });
     const whatsappButtonImage = cleanSettingImage(req.body.whatsappButtonImage);
+    const storeOpen = req.body.storeOpen !== false;
     const whatsappImageError = validateUploadedSettingImage(whatsappButtonImage, "WhatsApp button");
     if (whatsappImageError) return res.status(400).json({ message: whatsappImageError });
     if (!categoryId) return res.status(400).json({ message: "Choose a category to display on the home page." });
@@ -1004,6 +1007,11 @@ app.put("/api/admin/home-settings", auth(Role.ADMIN), async (req, res, next) => 
     await prisma.$executeRaw`
       INSERT INTO "SiteSetting" (key, value, "updatedAt")
       VALUES ('whatsapp_button_image', ${whatsappButtonImage}, now())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()
+    `;
+    await prisma.$executeRaw`
+      INSERT INTO "SiteSetting" (key, value, "updatedAt")
+      VALUES ('store_open', ${String(storeOpen)}, now())
       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()
     `;
     res.json(await homeSettingsShape());

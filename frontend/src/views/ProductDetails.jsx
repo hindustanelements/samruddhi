@@ -56,8 +56,8 @@ function ProductDetails() {
   return <main className="container-site py-12">
     <div className="mb-7 text-xs text-ink/45"><Link to="/">Home</Link> / <Link to="/products">Products</Link> / {product.name}</div>
     <div className="grid gap-10 lg:grid-cols-2">
-      <div className="relative overflow-hidden rounded-[2rem] border border-forest/10 bg-white">
-        <img src={product.image} alt={product.name} className={`aspect-[4/3] w-full object-cover transition duration-500 ${isOutOfStock ? "grayscale filter" : ""}`} onError={(e) => { e.currentTarget.src = "/samruddhi-hero.png"; }}/>
+      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-[2rem] border border-forest/10 bg-white">
+        <img src={product.image} alt={product.name} className={`block h-full w-full object-contain transition duration-500 ${isOutOfStock ? "grayscale filter" : ""}`} onError={(e) => { e.currentTarget.src = "/samruddhi-hero.png"; }}/>
         {isOutOfStock && <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white font-black text-xl uppercase tracking-widest backdrop-blur-[2px]">Out of Stock</div>}
       </div>
       <div className="lg:py-5">

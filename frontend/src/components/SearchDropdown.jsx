@@ -69,7 +69,6 @@ export default function SearchDropdown({ isMobile = false, onCloseMobile }) {
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     const query = search.trim();
-    setIsOpen(false);
     if (onCloseMobile) onCloseMobile();
 
     if (selectedIndex >= 0 && suggestions[selectedIndex]) {
@@ -79,6 +78,7 @@ export default function SearchDropdown({ isMobile = false, onCloseMobile }) {
 
     const path = location.pathname.startsWith("/categories") ? "/categories" : "/products";
     const searchUrl = query ? `${path}?search=${encodeURIComponent(query)}` : path;
+    setIsOpen(Boolean(query && suggestions.length > 0));
     navigate(searchUrl);
   };
 
