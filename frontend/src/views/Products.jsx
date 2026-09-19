@@ -1,10 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, Filter, RotateCcw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { ChevronDown, RotateCcw } from "lucide-react";
 import ProductCard from "../components/ProductCard";
-import { loadCategories, loadProducts, money } from "../lib/store";
+import { loadCategories, loadProducts } from "../lib/store";
+
+function shuffleProducts(items) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+  return shuffled;
+}
 
 function Products() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -16,7 +25,6 @@ function Products() {
   const query = searchParams.get("search") || "";
   const sort = searchParams.get("sort") || "newest";
 
-  const [maxPrice, setMaxPrice] = useState(5000);
   const [inStockOnly, setInStockOnly] = useState(false);
 
   useEffect(() => {
@@ -24,7 +32,10 @@ function Products() {
     setLoading(true);
     loadProducts(`/products?category=${encodeURIComponent(category)}&search=${encodeURIComponent(query)}&sort=${encodeURIComponent(sort)}`)
       .then((data) => {
-        if (isMounted) setProducts(Array.isArray(data) ? data : []);
+        if (isMounted) {
+          const loadedProducts = Array.isArray(data) ? data : [];
+          setProducts(sort === "newest" ? shuffleProducts(loadedProducts) : loadedProducts);
+        }
       })
       .catch((err) => console.error("Failed to load products:", err))
       .finally(() => {
@@ -61,15 +72,12 @@ function Products() {
 
   const clearFilters = () => {
     setSearchParams({});
-    setMaxPrice(5000);
     setInStockOnly(false);
   };
 
   const shown = products.filter((p) => {
-    const price = Number(p.discountPrice || p.price);
-    const matchesPrice = price <= maxPrice;
     const matchesStock = !inStockOnly || p.stock > 0;
-    return matchesPrice && matchesStock;
+    return matchesStock;
   });
 
   const activeCategoryObj = categories.find((c) => c.slug === category);
@@ -86,102 +94,66 @@ function Products() {
         </p>
       </div>
 
-      <div className="mt-9 grid gap-8 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-6">
-          <div className="flex items-center justify-between border-b border-forest/10 pb-4">
-            <h2 className="flex items-center gap-2 font-display text-lg font-bold text-forest">
-              <Filter size={18} className="text-clay" /> Filters
-            </h2>
-            {(category || query || maxPrice < 5000 || inStockOnly) && (
-              <button
-                onClick={clearFilters}
-                className="flex items-center gap-1 text-xs font-bold text-clay hover:underline"
-              >
-                <RotateCcw size={13} /> Reset
-              </button>
-            )}
-          </div>
-
-          {/* Category Dropdown */}
-          <div className="rounded-2xl border border-forest/10 bg-white p-5 shadow-sm">
-            <label className="block">
-              <span className="mb-2 block font-sans text-xs font-bold uppercase tracking-wider text-forest">
-                Category
-              </span>
-              <div className="relative">
-                <select
-                  value={category}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-forest/15 bg-white py-3 pl-4 pr-10 text-sm font-semibold text-forest shadow-sm outline-none transition focus:border-forest cursor-pointer"
-                >
-                  <option value="">All Categories</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.slug}>
-                      {c.name} ({c._count?.products || 0})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-forest/60" />
-              </div>
-            </label>
-          </div>
-
-          {/* Price Range Dropdown / Slider */}
-          <div className="rounded-2xl border border-forest/10 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-xs font-bold uppercase tracking-wider text-forest">Price Up To</span>
-              <span className="text-sm font-extrabold text-clay">{money(maxPrice)}</span>
+      <div className="mt-9">
+          <div className="sticky top-[70px] z-30 -mx-4 mb-6 flex flex-col gap-3 border-b border-forest/10 bg-white/95 px-4 py-3 backdrop-blur md:top-[70px] md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-semibold text-ink/60">
+                Showing <strong className="text-forest">{shown.length}</strong> {shown.length === 1 ? "product" : "products"}
+              </p>
+              <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-forest">
+                <input
+                  type="checkbox"
+                  checked={inStockOnly}
+                  onChange={(e) => setInStockOnly(e.target.checked)}
+                  className="h-4 w-4 rounded accent-forest cursor-pointer"
+                />
+                In Stock Only
+              </label>
             </div>
-            <input
-              type="range"
-              min="100"
-              max="5000"
-              step="100"
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(Number(e.target.value))}
-              className="mt-4 w-full accent-forest cursor-pointer"
-            />
-            <div className="mt-2 flex justify-between text-xs font-semibold text-ink/40">
-              <span>₹100</span>
-              <span>₹5,000+</span>
-            </div>
-          </div>
-
-          {/* Availability Filter */}
-          <div className="rounded-2xl border border-forest/10 bg-white p-4 shadow-sm">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={inStockOnly}
-                onChange={(e) => setInStockOnly(e.target.checked)}
-                className="h-4 w-4 rounded accent-forest cursor-pointer"
-              />
-              <span className="text-sm font-semibold text-forest">In Stock Only</span>
-            </label>
-          </div>
-        </aside>
-
-        <div>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm font-semibold text-ink/60">
-              Showing <strong className="text-forest">{shown.length}</strong> {shown.length === 1 ? "product" : "products"}
-            </p>
-            <label className="relative flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-ink/50">Sort by:</span>
-              <div className="relative">
-                <select
-                  value={sort}
-                  onChange={(e) => handleSortChange(e.target.value)}
-                  className="appearance-none rounded-full border border-forest/15 bg-white py-2.5 pl-4 pr-10 text-sm font-semibold text-forest shadow-sm outline-none transition focus:border-forest cursor-pointer"
+            <div className="grid w-full grid-cols-2 items-center gap-2 md:flex md:w-auto md:gap-3">
+              <label className="relative block min-w-0">
+                <div className="relative">
+                  <select
+                    aria-label="Filter by category"
+                    value={category}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
+                    className="w-full appearance-none rounded-full border border-forest/15 bg-white py-2.5 pl-4 pr-10 text-sm font-semibold text-forest shadow-sm outline-none transition focus:border-forest cursor-pointer md:w-auto"
+                  >
+                    <option value="">All Categories</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.slug}>
+                        {c.name} ({c._count?.products || 0})
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-forest/60" />
+                </div>
+              </label>
+              <label className="relative block">
+                <div className="relative">
+                  <select
+                    aria-label="Sort products"
+                    value={sort}
+                    onChange={(e) => handleSortChange(e.target.value)}
+                    className="w-full appearance-none rounded-full border border-forest/15 bg-white py-2.5 pl-4 pr-10 text-sm font-semibold text-forest shadow-sm outline-none transition focus:border-forest cursor-pointer md:w-auto"
+                  >
+                    <option value="newest">Newest first</option>
+                    <option value="bestsellers">Best sellers</option>
+                    <option value="price-low">Price: Low to high</option>
+                    <option value="price-high">Price: High to low</option>
+                  </select>
+                  <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-forest/60" />
+                </div>
+              </label>
+              {(category || query || inStockOnly) && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1 text-xs font-bold text-clay hover:underline"
                 >
-                  <option value="newest">Newest first</option>
-                  <option value="bestsellers">Best sellers</option>
-                  <option value="price-low">Price: Low to high</option>
-                  <option value="price-high">Price: High to low</option>
-                </select>
-                <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-forest/60" />
-              </div>
-            </label>
+                  <RotateCcw size={13} /> Reset
+                </button>
+              )}
+            </div>
           </div>
 
           {loading ? (
@@ -204,7 +176,6 @@ function Products() {
               </button>
             </div>
           )}
-        </div>
       </div>
     </main>
   );

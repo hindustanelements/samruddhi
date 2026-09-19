@@ -59,7 +59,7 @@ function Home() {
   const [slide, setSlide] = useState(0);
   const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
-  const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id).slice(0, 4) : [];
+  const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id) : [];
   useEffect(() => { loadProducts("/products").then(setProducts); loadCategories().then(setCategories); loadHomeSettings().then(setHomeSettings).catch(()=>{}); loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{}); }, []);
   useEffect(() => {
     const timer = setInterval(() => setSlide((current) => (current + 1) % slides.length), 4500);
@@ -75,22 +75,22 @@ function Home() {
 
     <section className="container-site py-20">
       <SectionHead eyebrow="Shop by range" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-6">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
+      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
     </section>
 
     {showcaseProducts.length > 0 && <section className="bg-white py-20"><div className="container-site">
       <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} body={showcaseCategory.description || "Fresh products from the current catalogue, loaded directly from your database."} link={`/products?category=${showcaseCategory.slug}`}/>
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
+      <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
     </div></section>}
 
-    <section className="bg-[#f0eadc] py-20"><div className="container-site"><SectionHead eyebrow="Loved by households" title="Pantry favourites" body="Fresh picks our community returns to, week after week." link="/products?sort=bestsellers"/><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{products.filter(p=>p.bestseller).slice(0,4).map(p=><ProductCard key={p.id} product={p}/>)}</div></div></section>
+    <section className="bg-[#f0eadc] py-20"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div></div></section>
 
-    <section className="container-site py-20">
+    {/* <section className="container-site py-20">
       <div className="grid overflow-hidden rounded-[2rem] bg-forest lg:grid-cols-2">
         <div className="p-9 text-white md:p-14"><p className="eyebrow !text-[#f3c85d]">Ancient grains, everyday ease</p><h2 className="mt-3 text-4xl md:text-5xl">Make room for mighty millets.</h2><p className="mt-5 max-w-lg leading-7 text-white/70">Nutritious, climate-friendly and wonderfully versatile. Reimagine familiar meals with foxtail, little, barnyard and kodo millet.</p><Link to="/products?category=millets" className="mt-8 inline-flex items-center gap-2 border-b border-white pb-1 text-sm font-bold">Explore millets <ArrowRight size={16}/></Link></div>
         <div className="relative min-h-80"><img src="https://images.unsplash.com/photo-1574323347407-f5e1ad6d020b?auto=format&fit=crop&w=1200&q=85" alt="Wholesome millets and grains" className="absolute inset-0 h-full w-full object-cover"/></div>
       </div>
-    </section>
+    </section> */}
 
     <section className="container-site py-20"><SectionHead eyebrow="Why Samruddhi" title="Simple promises, kept well"/><div className="grid gap-5 md:grid-cols-3">{[
       [Wheat,"Farm-sourced quality","We work with trusted growers and makers who value soil, season and honest craft."],
