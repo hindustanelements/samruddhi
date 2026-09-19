@@ -891,7 +891,7 @@ app.put("/api/profile", auth(), async (req, res, next) => {
 const categoryRows = () => prisma.$queryRaw`
   SELECT c.id, c.name, c.slug, c.description, c.image, c."createdAt", COUNT(p.id)::int AS "productCount"
   FROM "Category" c
-  LEFT JOIN "Product" p ON p."categoryId" = c.id
+  LEFT JOIN "Product" p ON p."categoryId" = c.id AND p.active = true
   GROUP BY c.id
   ORDER BY c.name ASC
 `;
@@ -940,7 +940,7 @@ app.put("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
       SET name = ${name}, slug = ${slugify(name, { lower: true })}, description = ${description}, image = ${image}
       WHERE id = ${Number(req.params.id)}
       RETURNING id, name, slug, description, image, "createdAt", (
-        SELECT COUNT(*)::int FROM "Product" WHERE "categoryId" = ${Number(req.params.id)}
+        SELECT COUNT(*)::int FROM "Product" WHERE "categoryId" = ${Number(req.params.id)} AND active = true
       ) AS "productCount"
     `;
     category ? res.json(categoryShape(category)) : res.status(404).json({ message: "Record not found." });
@@ -949,9 +949,25 @@ app.put("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
 app.delete("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
-    const products = await prisma.product.count({ where: { categoryId: id } });
-    if (products > 0) return res.status(409).json({ message: "Move or delete products in this category first." });
-    await prisma.category.delete({ where: { id } });
+    let blocked = false;
+    await prisma.$transaction(async (transaction) => {
+      const products = await transaction.product.findMany({
+        where: { categoryId: id, active: false },
+        select: { id: true, orderItems: { select: { id: true }, take: 1 } }
+      });
+      const archivedWithoutOrders = products.filter((product) => product.orderItems.length === 0).map((product) => product.id);
+      if (archivedWithoutOrders.length > 0) {
+        await transaction.product.deleteMany({ where: { id: { in: archivedWithoutOrders } } });
+      }
+
+      const remainingProducts = await transaction.product.count({ where: { categoryId: id } });
+      if (remainingProducts > 0) {
+        blocked = true;
+        return;
+      }
+      await transaction.category.delete({ where: { id } });
+    });
+    if (blocked) return res.status(409).json({ message: "Move or delete products in this category first. Archived products linked to orders must be kept for order history." });
     res.status(204).end();
   } catch (e) { next(e); }
 });
