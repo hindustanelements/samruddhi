@@ -51,6 +51,15 @@ const fallbackHomeSlides = [
   }
 ];
 
+function shuffleProducts(items) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 function Home() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -59,8 +68,8 @@ function Home() {
   const [slide, setSlide] = useState(0);
   const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
-  const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id) : [];
-  useEffect(() => { loadProducts("/products").then(setProducts); loadCategories().then(setCategories); loadHomeSettings().then(setHomeSettings).catch(()=>{}); loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{}); }, []);
+  const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id).slice(0, 12) : [];
+  useEffect(() => { loadProducts("/products").then((items) => setProducts(shuffleProducts(Array.isArray(items) ? items : []))); loadCategories().then(setCategories); loadHomeSettings().then(setHomeSettings).catch(()=>{}); loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{}); }, []);
   useEffect(() => {
     const timer = setInterval(() => setSlide((current) => (current + 1) % slides.length), 4500);
     return () => clearInterval(timer);
