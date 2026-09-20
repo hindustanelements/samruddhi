@@ -42,12 +42,26 @@ export const enableAdminPush = async () => {
   }
   const permission = await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission was not granted.");
-  const registration = await navigator.serviceWorker.register("/push-sw.js");
+  await navigator.serviceWorker.register("/push-sw.js");
+  const registration = await navigator.serviceWorker.ready;
   const { publicKey } = await request("/push/public-key");
   const base64 = publicKey.replace(/-/g, "+").replace(/_/g, "/");
   const paddedBase64 = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
   const applicationServerKey = Uint8Array.from(atob(paddedBase64), (char) => char.charCodeAt(0));
-  const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  let subscription = await registration.pushManager.getSubscription();
+  const existingKey = subscription?.options?.applicationServerKey;
+  const existingKeyBytes = existingKey ? new Uint8Array(existingKey) : null;
+  const hasSameKey = existingKeyBytes && existingKeyBytes.byteLength === applicationServerKey.byteLength
+    && existingKeyBytes.every((value, index) => value === applicationServerKey[index]);
+  if (subscription && !hasSameKey) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+  try {
+    subscription = subscription || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+  } catch (error) {
+    throw new Error(`Chrome could not register push alerts. Open site settings, allow notifications, and try again. (${error.message})`);
+  }
   await request("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription }) });
   return true;
 };

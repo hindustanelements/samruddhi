@@ -110,7 +110,7 @@ function Admin() {
   };
 
   const testBrowserAlarm=()=>{
-    enableAdminPush().then(()=>setPushStatus("Order alerts enabled")).catch((error)=>{setPushStatus(error.message);window.alert(error.message)});
+    enableAdminPush().then(()=>setPushStatus("Order alerts enabled on this phone")).catch((error)=>{setPushStatus(error.message);window.alert(error.message)});
     const mock={id:"test-"+Date.now(),orderNumber:"TEST"+Date.now().toString().slice(-4),customerName:"Sample Customer",total:1499};
     setActiveRingOrder(mock);
     startRingingAlarm();
@@ -119,7 +119,7 @@ function Admin() {
     setPushStatus("Enabling...");
     try {
       await enableAdminPush();
-      setPushStatus("Order alerts enabled");
+      setPushStatus("Order alerts enabled on this phone");
     } catch (error) {
       setPushStatus(error.message);
     }

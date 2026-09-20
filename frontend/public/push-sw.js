@@ -7,6 +7,8 @@ self.addEventListener("push", (event) => {
     badge: "/favicon.png",
     tag: data.orderNumber || "samruddhi-order",
     renotify: true,
+    requireInteraction: true,
+    vibrate: [400, 200, 400, 200, 800],
     data: { url: data.url || "/admin?tab=orders" }
   }));
 });
