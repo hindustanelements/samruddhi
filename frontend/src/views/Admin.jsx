@@ -109,8 +109,16 @@ function Admin() {
     setActiveRingOrder(null);
   };
 
-  const testBrowserAlarm=()=>{
-    enableAdminPush().then(()=>setPushStatus("Order alerts enabled on this phone")).catch((error)=>{setPushStatus(error.message);window.alert(error.message)});
+  const testBrowserAlarm=async()=>{
+    try {
+      setPushStatus("Registering this phone...");
+      await enableAdminPush();
+      await request("/push/test",{method:"POST"});
+      setPushStatus("Background phone alert sent. Close Chrome and check the notification.");
+    } catch (error) {
+      setPushStatus(error.message);
+      window.alert(error.message);
+    }
     const mock={id:"test-"+Date.now(),orderNumber:"TEST"+Date.now().toString().slice(-4),customerName:"Sample Customer",total:1499};
     setActiveRingOrder(mock);
     startRingingAlarm();

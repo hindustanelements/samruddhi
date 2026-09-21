@@ -78,21 +78,21 @@ function Home() {
     {!homeSettings.storeOpen && <div className="bg-clay px-5 py-4 text-center text-sm font-bold text-white">🙏 Store was closed 🙏</div>}
     <HeroSlider slide={slide} activeSlide={activeSlide}/>
 
-    <section className="border-b border-forest/10 bg-white py-7"><div className="container-site grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{[
+    {/* <section className="border-b border-forest/10 bg-white py-7"><div className="container-site grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{[
       [Leaf,"Natural clay craft","Hand-finished kitchenware"],[ShieldCheck,"Clean pantry","No needless additives"],[Package,"Freshly packed","Small batches, careful handling"],[Clock3,"Tradition first","Millets, cashews and clay"]
-    ].map(([I,t,d])=><div key={t} className="flex items-center gap-4"><span className="grid h-11 w-11 place-items-center rounded-full bg-cream text-leaf"><I size={20}/></span><div><strong className="text-sm text-forest">{t}</strong><p className="text-xs text-ink/50">{d}</p></div></div>)}</div></section>
+    ].map(([I,t,d])=><div key={t} className="flex items-center gap-4"><span className="grid h-11 w-11 place-items-center rounded-full bg-cream text-leaf"><I size={20}/></span><div><strong className="text-sm text-forest">{t}</strong><p className="text-xs text-ink/50">{d}</p></div></div>)}</div></section> */}
 
-    <section className="container-site py-20">
-      <SectionHead eyebrow="Shop by range" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
+    <section className="container-site py-5">
+      <SectionHead eyebrow="Shop by category" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
       <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
     </section>
 
-    {showcaseProducts.length > 0 && <section className="bg-white py-20"><div className="container-site">
+    {showcaseProducts.length > 0 && <section className="bg-white py-5"><div className="container-site">
       <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} body={showcaseCategory.description || "Fresh products from the current catalogue, loaded directly from your database."} link={`/products?category=${showcaseCategory.slug}`}/>
       <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
     </div></section>}
 
-    <section className="bg-[#f0eadc] py-20"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div></div></section>
+    <section className="bg-[#f0eadc] py-5"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div></div></section>
 
     {/* <section className="container-site py-20">
       <div className="grid overflow-hidden rounded-[2rem] bg-forest lg:grid-cols-2">

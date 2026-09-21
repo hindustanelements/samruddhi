@@ -57,31 +57,42 @@ const sendEmail = async ({ to, subject, text, html }) => {
   await transporter.sendMail({ from: smtpFrom, to, subject, text, html });
 };
 
-const sendNewOrderPush = async (order) => {
-  if (!pushConfigured) return;
-  const subscriptions = await prisma.pushSubscription.findMany({
-    select: { id: true, endpoint: true, p256dh: true, auth: true }
-  });
-  const payload = JSON.stringify({
-    title: "New Samruddhi order",
-    body: `Order ${order.orderNumber} from ${order.customerName} - ${Number(order.total).toLocaleString("en-IN")} INR`,
-    orderNumber: order.orderNumber,
-    url: "/admin?tab=orders"
-  });
-  await Promise.all(subscriptions.map(async (subscription) => {
+const sendPushPayload = async (subscriptions, payload) => Promise.all(subscriptions.map(async (subscription) => {
     try {
       await webpush.sendNotification({
         endpoint: subscription.endpoint,
         keys: { p256dh: subscription.p256dh, auth: subscription.auth }
-      }, payload);
+      }, payload, { TTL: 86400, urgency: "high" });
+      return true;
     } catch (error) {
       if (error.statusCode === 404 || error.statusCode === 410) {
         await prisma.pushSubscription.delete({ where: { id: subscription.id } }).catch(() => {});
       } else {
         console.error("Order push notification failed:", error.message);
       }
+      return false;
     }
   }));
+
+const sendNewOrderPush = async (order) => {
+  if (!pushConfigured) {
+    console.error("New order push skipped: VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are not configured.");
+    return;
+  }
+  const subscriptions = await prisma.pushSubscription.findMany({
+    select: { id: true, endpoint: true, p256dh: true, auth: true }
+  });
+  if (!subscriptions.length) {
+    console.warn("New order push skipped: no admin phone is registered for push alerts.");
+    return;
+  }
+  const payload = JSON.stringify({
+    title: "New Samruddhi order",
+    body: `Order ${order.orderNumber} from ${order.customerName} - ${Number(order.total).toLocaleString("en-IN")} INR`,
+    orderNumber: order.orderNumber,
+    url: "/admin?tab=orders"
+  });
+  await sendPushPayload(subscriptions, payload);
 };
 
 app.use(cors({ origin: process.env.CLIENT_URL?.split(",") || true }));
@@ -706,6 +717,25 @@ app.post("/api/push/subscribe", auth(Role.ADMIN), async (req, res, next) => {
       create: { userId: req.auth.id, endpoint, p256dh: keys.p256dh, auth: keys.auth }
     });
     res.status(201).json({ enabled: true });
+  } catch (e) { next(e); }
+});
+
+app.post("/api/push/test", auth(Role.ADMIN), async (req, res, next) => {
+  try {
+    if (!pushConfigured) return res.status(503).json({ message: "Push notifications are not configured on the server." });
+    const subscriptions = await prisma.pushSubscription.findMany({
+      where: { userId: req.auth.id },
+      select: { id: true, endpoint: true, p256dh: true, auth: true }
+    });
+    if (!subscriptions.length) return res.status(404).json({ message: "This phone is not registered for push alerts." });
+    const results = await sendPushPayload(subscriptions, JSON.stringify({
+      title: "Samruddhi alert test",
+      body: "Phone alerts are working. New orders will notify this phone.",
+      orderNumber: `TEST${Date.now().toString().slice(-6)}`,
+      url: "/admin?tab=orders"
+    }));
+    if (!results.some(Boolean)) return res.status(502).json({ message: "The push service rejected this phone subscription. Enable notifications again on the phone." });
+    res.json({ sent: true });
   } catch (e) { next(e); }
 });
 
@@ -1471,14 +1501,14 @@ app.post("/api/orders", async (req, res, next) => {
       return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...customer, paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows } }, include: { items: true } });
     });
 
+    await sendNewOrderPush(order).catch((error) => {
+      console.error("New order push delivery failed:", error.message);
+    });
     await sendEmail({
       to: customer.email,
       subject: `Order ${order.orderNumber} confirmed`,
       text: `Your Samruddhi order ${order.orderNumber} has been placed successfully.`,
       html: `<p>Your Samruddhi order <strong>${order.orderNumber}</strong> has been placed successfully.</p>`
-    });
-    await sendNewOrderPush(order).catch((error) => {
-      console.error("New order push delivery failed:", error.message);
     });
 
     res.status(201).json(order);
