@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, RotateCcw } from "lucide-react";
 import ProductCard from "../components/ProductCard";
@@ -16,10 +16,15 @@ function shuffleProducts(items) {
 }
 
 function Products() {
+  const pageSize = 24;
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const loadMoreRef = useRef(null);
 
   const category = searchParams.get("category") || "";
   const query = searchParams.get("search") || "";
@@ -29,12 +34,17 @@ function Products() {
 
   useEffect(() => {
     let isMounted = true;
+    const params = new URLSearchParams({ category, search: query, sort, page: "1", limit: String(pageSize) });
+    if (inStockOnly) params.set("inStock", "true");
     setLoading(true);
-    loadProducts(`/products?category=${encodeURIComponent(category)}&search=${encodeURIComponent(query)}&sort=${encodeURIComponent(sort)}`)
+    setPage(1);
+    setHasMore(true);
+    loadProducts(`/products?${params.toString()}`)
       .then((data) => {
         if (isMounted) {
           const loadedProducts = Array.isArray(data) ? data : [];
           setProducts(sort === "newest" ? shuffleProducts(loadedProducts) : loadedProducts);
+          setHasMore(loadedProducts.length === pageSize);
         }
       })
       .catch((err) => console.error("Failed to load products:", err))
@@ -44,7 +54,39 @@ function Products() {
     return () => {
       isMounted = false;
     };
-  }, [category, query, sort]);
+  }, [category, query, sort, inStockOnly]);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || loading || loadingMore || !hasMore) return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      const nextPage = page + 1;
+      const params = new URLSearchParams({
+        category,
+        search: query,
+        sort,
+        page: String(nextPage),
+        limit: String(pageSize)
+      });
+      if (inStockOnly) params.set("inStock", "true");
+
+      setLoadingMore(true);
+      loadProducts(`/products?${params.toString()}`)
+        .then((data) => {
+          const loadedProducts = Array.isArray(data) ? data : [];
+          setProducts((currentProducts) => [...currentProducts, ...loadedProducts]);
+          setPage(nextPage);
+          setHasMore(loadedProducts.length === pageSize);
+        })
+        .catch((err) => console.error("Failed to load more products:", err))
+        .finally(() => setLoadingMore(false));
+    }, { rootMargin: "300px" });
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [category, query, sort, inStockOnly, loading, loadingMore, hasMore, page]);
 
   useEffect(() => {
     loadCategories().then(setCategories).catch(() => {});
@@ -75,10 +117,7 @@ function Products() {
     setInStockOnly(false);
   };
 
-  const shown = products.filter((p) => {
-    const matchesStock = !inStockOnly || p.stock > 0;
-    return matchesStock;
-  });
+  const shown = products;
 
   const activeCategoryObj = categories.find((c) => c.slug === category);
 
@@ -159,11 +198,16 @@ function Products() {
           {loading ? (
             <div className="py-24 text-center text-ink/40 font-semibold">Gathering the pantry...</div>
           ) : shown.length > 0 ? (
-            <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-              {shown.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+                {shown.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+              <div ref={loadMoreRef} className="min-h-16 pt-8 text-center text-sm font-semibold text-ink/40" aria-live="polite">
+                {loadingMore && "Gathering more products..."}
+              </div>
+            </>
           ) : (
             <div className="rounded-3xl border border-forest/10 bg-white p-12 text-center">
               <p className="text-lg font-bold text-forest">No products match your filters.</p>

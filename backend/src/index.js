@@ -1381,13 +1381,18 @@ app.get("/api/products/search/suggest", async (req, res, next) => {
 });
 
 app.get("/api/products", async (req, res) => {
-  const { category, search, sort = "newest", featured } = req.query;
+  const { category, search, sort = "newest", featured, inStock } = req.query;
+  const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 24));
+  const offset = (page - 1) * limit;
   const searchTerm = String(search || "").trim();
   const searchPattern = `%${searchTerm}%`;
   const searchPrefix = `${searchTerm}%`;
   const whereClauses = [Prisma.sql`p.active = true`];
   if (category) whereClauses.push(Prisma.sql`c.slug = ${String(category)}`);
   if (featured === "true") whereClauses.push(Prisma.sql`p.featured = true`);
+  if (inStock === "true") whereClauses.push(Prisma.sql`p.stock > 0`);
   if (searchTerm) whereClauses.push(Prisma.sql`(
     p.name ILIKE ${searchPattern} OR
     c.name ILIKE ${searchPattern} OR
@@ -1416,10 +1421,10 @@ app.get("/api/products", async (req, res) => {
     : Prisma.sql`p."createdAt" DESC`;
   const products = await prisma.$queryRaw(Prisma.sql`
     SELECT
-      p.id, p.name, p.slug, p.sku, p.unit, p."shortDescription", p.description,
-      p.benefits, p.usage, p.price, p."discountPrice", p.weight, p.stock,
+      p.id, p.name, p.slug, p.sku, p.unit, p."shortDescription",
+      p.price, p."discountPrice", p.weight, p.stock,
       CASE WHEN p.image LIKE 'data:image/%' THEN '/samruddhi-hero.png' ELSE p.image END AS image,
-      p."metaTitle", p."metaDescription", p."seoKeywords", p.featured, p.bestseller,
+      p.featured, p.bestseller,
       p.active, p."categoryId", p."createdAt", p."updatedAt",
       c.id AS category_id, c.name AS category_name, c.slug AS category_slug,
       c.description AS category_description,
@@ -1429,6 +1434,7 @@ app.get("/api/products", async (req, res) => {
     JOIN "Category" c ON c.id = p."categoryId"
     WHERE ${Prisma.join(whereClauses, " AND ")}
     ORDER BY ${orderBy}
+    ${hasPagination ? Prisma.sql`LIMIT ${limit} OFFSET ${offset}` : Prisma.empty}
   `);
   res.json(productRows(products));
 });

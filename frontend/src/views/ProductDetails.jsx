@@ -35,7 +35,7 @@ function ProductDetails() {
             const sameCategoryIds = new Set(sameCategoryProducts.map((item) => item.id));
             const remainingProducts = products.filter((item) => item.id !== nextProduct.id && !sameCategoryIds.has(item.id));
 
-            setMoreProducts([...sameCategoryProducts, ...remainingProducts]);
+            setMoreProducts([...sameCategoryProducts, ...remainingProducts].slice(0, 4));
           })
           .catch(() => {
             if (active) setMoreProducts([]);
