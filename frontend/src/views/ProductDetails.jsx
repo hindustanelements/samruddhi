@@ -7,6 +7,15 @@ import ProductCard from "../components/ProductCard";
 import { useApp } from "../context/AppContext";
 import { loadProduct, loadProducts, money } from "../lib/store";
 
+function shuffleProducts(items) {
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+  }
+  return shuffled;
+}
+
 function ProductDetails() {
   const pageSize = 24;
   const { slug } = useParams();
@@ -15,32 +24,34 @@ function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [qty, setQty] = useState(1);
   const [moreProducts, setMoreProducts] = useState([]);
-  const [recommendationPage, setRecommendationPage] = useState(1);
+  const [allRecommendations, setAllRecommendations] = useState([]);
+  const [visibleRecommendationCount, setVisibleRecommendationCount] = useState(pageSize);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMoreRecommendations, setHasMoreRecommendations] = useState(true);
   const recommendationsEndRef = useRef(null);
 
   useEffect(() => {
     let active = true;
     setProduct(null);
     setMoreProducts([]);
+    setAllRecommendations([]);
+    setVisibleRecommendationCount(pageSize);
     setQty(1);
-    setRecommendationPage(1);
-    setHasMoreRecommendations(true);
 
     loadProduct(slug)
       .then((nextProduct) => {
         if (!active) return;
         setProduct(nextProduct);
 
-        loadProducts(`/products?page=1&limit=${pageSize + 1}`)
+        loadProducts("/products")
           .then((products) => {
             if (!active) return;
 
             const loadedProducts = Array.isArray(products) ? products : [];
-            const relatedProducts = loadedProducts.filter((item) => item.id !== nextProduct.id);
-            setMoreProducts(relatedProducts.slice(0, pageSize));
-            setHasMoreRecommendations(loadedProducts.length === pageSize + 1);
+            const sameCategoryProducts = loadedProducts.filter((item) => item.id !== nextProduct.id && item.category?.id === nextProduct.category?.id);
+            const otherProducts = loadedProducts.filter((item) => item.id !== nextProduct.id && item.category?.id !== nextProduct.category?.id);
+            const orderedProducts = [...sameCategoryProducts, ...shuffleProducts(otherProducts)];
+            setAllRecommendations(orderedProducts);
+            setMoreProducts(orderedProducts.slice(0, pageSize));
           })
           .catch(() => {
             if (active) setMoreProducts([]);
@@ -55,30 +66,23 @@ function ProductDetails() {
 
   useEffect(() => {
     const target = recommendationsEndRef.current;
-    if (!target || loadingMore || !hasMoreRecommendations || !product) return undefined;
+    if (!target || loadingMore || visibleRecommendationCount >= allRecommendations.length || !product) return undefined;
 
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting) return;
-      const nextPage = recommendationPage + 1;
       setLoadingMore(true);
-      loadProducts(`/products?page=${nextPage}&limit=${pageSize + 1}`)
-        .then((products) => {
-          const loadedProducts = Array.isArray(products) ? products : [];
-          setMoreProducts((currentProducts) => {
-            const existingIds = new Set(currentProducts.map((item) => item.id));
-            const newProducts = loadedProducts.filter((item) => item.id !== product.id && !existingIds.has(item.id));
-            return [...currentProducts, ...newProducts.slice(0, pageSize)];
-          });
-          setRecommendationPage(nextPage);
-          setHasMoreRecommendations(loadedProducts.length === pageSize + 1);
-        })
-        .catch(() => setHasMoreRecommendations(false))
+      setVisibleRecommendationCount((currentCount) => {
+        const nextCount = Math.min(currentCount + pageSize, allRecommendations.length);
+        setMoreProducts(allRecommendations.slice(0, nextCount));
+        return nextCount;
+      });
+      Promise.resolve()
         .finally(() => setLoadingMore(false));
     }, { rootMargin: "300px" });
 
     observer.observe(target);
     return () => observer.disconnect();
-  }, [loadingMore, hasMoreRecommendations, recommendationPage, product]);
+  }, [loadingMore, visibleRecommendationCount, allRecommendations, product]);
 
   if (!product) return <div className="container-site py-28 text-center">Loading product...</div>;
 
