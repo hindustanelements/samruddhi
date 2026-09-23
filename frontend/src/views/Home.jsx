@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Clock3, Leaf, Package, ShieldCheck, Star, Store, Wheat } from "lucide-react";
 import HeroSlider from "../components/HeroSlider";
@@ -61,15 +61,53 @@ function shuffleProducts(items) {
 }
 
 function Home() {
+  const pageSize = 24;
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [slides, setSlides] = useState(fallbackHomeSlides);
   const [homeSettings, setHomeSettings] = useState({showcaseCategoryId:null, storeOpen:true});
   const [slide, setSlide] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const productsEndRef = useRef(null);
   const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
   const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id).slice(0, 12) : [];
-  useEffect(() => { loadProducts("/products").then((items) => setProducts(shuffleProducts(Array.isArray(items) ? items : []))); loadCategories().then(setCategories); loadHomeSettings().then(setHomeSettings).catch(()=>{}); loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{}); }, []);
+  useEffect(() => {
+    loadProducts(`/products?page=1&limit=${pageSize}`)
+      .then((items) => {
+        const loadedProducts = Array.isArray(items) ? items : [];
+        setProducts(shuffleProducts(loadedProducts));
+        setHasMore(loadedProducts.length === pageSize);
+      })
+      .catch(() => setHasMore(false));
+    loadCategories().then(setCategories);
+    loadHomeSettings().then(setHomeSettings).catch(()=>{});
+    loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{});
+  }, []);
+  useEffect(() => {
+    const target = productsEndRef.current;
+    if (!target || loadingMore || !hasMore) return undefined;
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      const nextPage = page + 1;
+      setLoadingMore(true);
+      loadProducts(`/products?page=${nextPage}&limit=${pageSize}`)
+        .then((items) => {
+          const loadedProducts = Array.isArray(items) ? items : [];
+          setProducts((currentProducts) => [...currentProducts, ...loadedProducts]);
+          setPage(nextPage);
+          setHasMore(loadedProducts.length === pageSize);
+        })
+        .catch(() => setHasMore(false))
+        .finally(() => setLoadingMore(false));
+    }, { rootMargin: "300px" });
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadingMore, hasMore, page]);
   useEffect(() => {
     const timer = setInterval(() => setSlide((current) => (current + 1) % slides.length), 4500);
     return () => clearInterval(timer);
@@ -92,7 +130,7 @@ function Home() {
       <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
     </div></section>}
 
-    <section className="bg-[#f0eadc] py-5"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div></div></section>
+    <section className="bg-[#f0eadc] py-5"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div><div ref={productsEndRef} className="min-h-16 pt-8 text-center text-sm font-semibold text-ink/40" aria-live="polite">{loadingMore && "Gathering more products..."}</div></div></section>
 
     {/* <section className="container-site py-20">
       <div className="grid overflow-hidden rounded-[2rem] bg-forest lg:grid-cols-2">
