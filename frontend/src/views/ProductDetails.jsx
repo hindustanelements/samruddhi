@@ -33,14 +33,14 @@ function ProductDetails() {
         if (!active) return;
         setProduct(nextProduct);
 
-        loadProducts(`/products?page=1&limit=${pageSize}`)
+        loadProducts(`/products?page=1&limit=${pageSize + 1}`)
           .then((products) => {
             if (!active) return;
 
             const loadedProducts = Array.isArray(products) ? products : [];
             const relatedProducts = loadedProducts.filter((item) => item.id !== nextProduct.id);
-            setMoreProducts(relatedProducts);
-            setHasMoreRecommendations(loadedProducts.length === pageSize);
+            setMoreProducts(relatedProducts.slice(0, pageSize));
+            setHasMoreRecommendations(loadedProducts.length === pageSize + 1);
           })
           .catch(() => {
             if (active) setMoreProducts([]);
@@ -61,16 +61,16 @@ function ProductDetails() {
       if (!entry.isIntersecting) return;
       const nextPage = recommendationPage + 1;
       setLoadingMore(true);
-      loadProducts(`/products?page=${nextPage}&limit=${pageSize}`)
+      loadProducts(`/products?page=${nextPage}&limit=${pageSize + 1}`)
         .then((products) => {
           const loadedProducts = Array.isArray(products) ? products : [];
           setMoreProducts((currentProducts) => {
             const existingIds = new Set(currentProducts.map((item) => item.id));
             const newProducts = loadedProducts.filter((item) => item.id !== product.id && !existingIds.has(item.id));
-            return [...currentProducts, ...newProducts];
+            return [...currentProducts, ...newProducts.slice(0, pageSize)];
           });
           setRecommendationPage(nextPage);
-          setHasMoreRecommendations(loadedProducts.length === pageSize);
+          setHasMoreRecommendations(loadedProducts.length === pageSize + 1);
         })
         .catch(() => setHasMoreRecommendations(false))
         .finally(() => setLoadingMore(false));

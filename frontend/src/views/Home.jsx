@@ -67,13 +67,30 @@ function Home() {
   const [slides, setSlides] = useState(fallbackHomeSlides);
   const [homeSettings, setHomeSettings] = useState({showcaseCategoryId:null, storeOpen:true});
   const [slide, setSlide] = useState(0);
+  const [showcaseProducts, setShowcaseProducts] = useState([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const productsEndRef = useRef(null);
   const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
-  const showcaseProducts = showcaseCategory ? products.filter((p) => p.category?.id === showcaseCategory.id).slice(0, 12) : [];
+  useEffect(() => {
+    if (!showcaseCategory) {
+      setShowcaseProducts([]);
+      return undefined;
+    }
+    let active = true;
+    loadProducts(`/products?category=${encodeURIComponent(showcaseCategory.slug)}&page=1&limit=20`)
+      .then((items) => {
+        if (active) setShowcaseProducts(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (active) setShowcaseProducts([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [showcaseCategory?.slug]);
   useEffect(() => {
     loadProducts(`/products?page=1&limit=${pageSize}`)
       .then((items) => {
@@ -128,6 +145,7 @@ function Home() {
     {showcaseProducts.length > 0 && <section className="bg-white py-5"><div className="container-site">
       <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} body={showcaseCategory.description || "Fresh products from the current catalogue, loaded directly from your database."} link={`/products?category=${showcaseCategory.slug}`}/>
       <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
+      <div className="mt-10 flex justify-center"><Link to={`/products?category=${showcaseCategory.slug}`} className="btn-light">View More Products</Link></div>
     </div></section>}
 
     <section className="bg-[#f0eadc] py-5"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div><div ref={productsEndRef} className="min-h-16 pt-8 text-center text-sm font-semibold text-ink/40" aria-live="polite">{loadingMore && "Gathering more products..."}</div></div></section>
