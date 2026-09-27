@@ -54,7 +54,6 @@ model Category {
   image       String?
   products    Product[]
   heroSlides  HeroSlide[]
-  coupons     Coupon[]
   createdAt   DateTime  @default(now())
 }
 
@@ -162,8 +161,7 @@ model Coupon {
   active      Boolean    @default(true)
   startsAt    DateTime?
   expiresAt   DateTime?
-  categoryId  Int?
-  category    Category?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryIds Int[]      @default([])
   orders      Order[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt

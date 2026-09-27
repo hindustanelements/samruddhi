@@ -501,6 +501,11 @@ const couponShape = (coupon) => coupon ? ({
   minSubtotal: Number(coupon.minSubtotal || 0),
   maxDiscount: coupon.maxDiscount ? Number(coupon.maxDiscount) : null
 }) : null;
+const couponCategoryIds = (coupon) => {
+  if (Array.isArray(coupon.categoryIds)) return coupon.categoryIds.filter((id) => Number.isInteger(id));
+  if (Number.isInteger(coupon.categoryId)) return [coupon.categoryId];
+  return null;
+};
 const couponData = (body) => ({
   code: body.code?.trim().toUpperCase(),
   type: body.type === "FIXED" ? "FIXED" : "PERCENT",
@@ -508,7 +513,9 @@ const couponData = (body) => ({
   minSubtotal: Number(body.minSubtotal || 0),
   maxDiscount: body.maxDiscount ? Number(body.maxDiscount) : null,
   usageLimit: body.usageLimit ? Number(body.usageLimit) : null,
-  categoryId: body.categoryId ? Number(body.categoryId) : null,
+  categoryIds: Array.isArray(body.categoryIds)
+    ? [...new Set(body.categoryIds.map(Number))]
+    : body.categoryId ? [Number(body.categoryId)] : [],
   active: body.active !== false,
   startsAt: body.startsAt ? new Date(body.startsAt) : null,
   expiresAt: body.expiresAt ? new Date(body.expiresAt) : null
@@ -518,7 +525,7 @@ const requireCoupon = (data) => {
   if (!Number.isFinite(data.value) || data.value <= 0) return "Discount value must be greater than 0.";
   if (data.type === "PERCENT" && data.value > 100) return "Percentage discount cannot exceed 100.";
   if (!Number.isFinite(data.minSubtotal) || data.minSubtotal < 0) return "Minimum subtotal must be 0 or more.";
-  if (data.categoryId !== null && (!Number.isInteger(data.categoryId) || data.categoryId <= 0)) return "Choose a valid category.";
+  if (data.categoryIds.some((id) => !Number.isInteger(id) || id <= 0)) return "Choose valid categories.";
   if (data.maxDiscount !== null && (!Number.isFinite(data.maxDiscount) || data.maxDiscount <= 0)) return "Maximum discount must be greater than 0.";
   if (data.usageLimit !== null && (!Number.isInteger(data.usageLimit) || data.usageLimit <= 0)) return "Usage limit must be a whole number greater than 0.";
   if (data.startsAt && Number.isNaN(data.startsAt.valueOf())) return "Start date is invalid.";
@@ -547,17 +554,19 @@ const validateCoupon = async (code, rows) => {
   const cleanCode = code?.trim().toUpperCase();
   if (!cleanCode) return { coupon: null, discount: 0 };
   if (!couponsReady()) throw new Error("Coupon setup is not ready. Please run Prisma db push and generate, then restart the server.");
-  const coupon = await prisma.coupon.findUnique({ where: { code: cleanCode }, include: { category: true } });
+  const coupon = await prisma.coupon.findUnique({ where: { code: cleanCode } });
   const now = new Date();
   if (!coupon || !coupon.active) throw new Error("Coupon code is not valid.");
   if (coupon.startsAt && coupon.startsAt > now) throw new Error("Coupon code is not active yet.");
   if (coupon.expiresAt && coupon.expiresAt < now) throw new Error("Coupon code has expired.");
   if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) throw new Error("Coupon usage limit has been reached.");
+  const categoryIds = couponCategoryIds(coupon);
+  if (!categoryIds) throw new Error("Coupon setup is out of date. Redeploy the backend so Prisma Client matches the database schema.");
   const eligibleSubtotal = rows
-    .filter((row) => coupon.categoryId === null || row.categoryId === coupon.categoryId)
+    .filter((row) => !categoryIds.length || categoryIds.includes(row.categoryId))
     .reduce((sum, row) => sum + Number(row.price) * row.quantity, 0);
-  if (coupon.categoryId !== null && eligibleSubtotal <= 0) throw new Error(`This coupon applies only to items in ${coupon.category?.name || "the selected category"}.`);
-  if (eligibleSubtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - eligibleSubtotal} more in ${coupon.category?.name || "eligible items"} to use this coupon.`);
+  if (categoryIds.length && eligibleSubtotal <= 0) throw new Error("This coupon applies only to items in the selected categories.");
+  if (eligibleSubtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - eligibleSubtotal} more in eligible items to use this coupon.`);
   return { coupon, discount: couponDiscount(coupon, eligibleSubtotal) };
 };
 const orderTotals = async ({ items, couponCode, customer }) => {
@@ -1140,8 +1149,13 @@ app.get("/api/admin/customers", auth(Role.ADMIN), async (_req, res, next) => {
 app.get("/api/admin/coupons", auth(Role.ADMIN), async (_req, res, next) => {
   try {
     if (!couponsReady()) return res.json([]);
-    const coupons = await prisma.coupon.findMany({ include: { category: true }, orderBy: { createdAt: "desc" } });
-    res.json(coupons.map(couponShape));
+    const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: "desc" } });
+    const couponCategories = coupons.map(couponCategoryIds);
+    if (couponCategories.some((ids) => ids === null)) throw new Error("Coupon setup is out of date. Redeploy the backend so Prisma Client matches the database schema.");
+    const categoryIds = [...new Set(couponCategories.flat())];
+    const categories = await prisma.category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, name: true } });
+    const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
+    res.json(coupons.map((coupon, index) => ({ ...couponShape(coupon), categoryNames: couponCategories[index].map((id) => categoryNames.get(id)).filter(Boolean) })));
   } catch (e) { next(e); }
 });
 
