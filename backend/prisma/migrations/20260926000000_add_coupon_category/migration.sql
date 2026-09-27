@@ -1,0 +1,6 @@
+ALTER TABLE "Coupon"
+ADD COLUMN "categoryId" INTEGER;
+
+ALTER TABLE "Coupon"
+ADD CONSTRAINT "Coupon_categoryId_fkey"
+FOREIGN KEY ("categoryId") REFERENCES "Category"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

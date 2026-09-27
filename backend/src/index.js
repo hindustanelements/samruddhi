@@ -508,6 +508,7 @@ const couponData = (body) => ({
   minSubtotal: Number(body.minSubtotal || 0),
   maxDiscount: body.maxDiscount ? Number(body.maxDiscount) : null,
   usageLimit: body.usageLimit ? Number(body.usageLimit) : null,
+  categoryId: body.categoryId ? Number(body.categoryId) : null,
   active: body.active !== false,
   startsAt: body.startsAt ? new Date(body.startsAt) : null,
   expiresAt: body.expiresAt ? new Date(body.expiresAt) : null
@@ -517,6 +518,7 @@ const requireCoupon = (data) => {
   if (!Number.isFinite(data.value) || data.value <= 0) return "Discount value must be greater than 0.";
   if (data.type === "PERCENT" && data.value > 100) return "Percentage discount cannot exceed 100.";
   if (!Number.isFinite(data.minSubtotal) || data.minSubtotal < 0) return "Minimum subtotal must be 0 or more.";
+  if (data.categoryId !== null && (!Number.isInteger(data.categoryId) || data.categoryId <= 0)) return "Choose a valid category.";
   if (data.maxDiscount !== null && (!Number.isFinite(data.maxDiscount) || data.maxDiscount <= 0)) return "Maximum discount must be greater than 0.";
   if (data.usageLimit !== null && (!Number.isInteger(data.usageLimit) || data.usageLimit <= 0)) return "Usage limit must be a whole number greater than 0.";
   if (data.startsAt && Number.isNaN(data.startsAt.valueOf())) return "Start date is invalid.";
@@ -533,7 +535,7 @@ const cartRows = async (items = []) => {
     const quantity = Number(item.quantity || 0);
     const p = products.find((x) => x.id === productId);
     if (!p || p.stock < quantity || quantity < 1) throw new Error(`${p?.name || "Product"} is unavailable.`);
-    return { productId: p.id, name: p.name, price: p.discountPrice || p.price, quantity, weight: p.weight };
+    return { productId: p.id, categoryId: p.categoryId, name: p.name, price: p.discountPrice || p.price, quantity, weight: p.weight };
   });
 };
 const couponDiscount = (coupon, subtotal) => {
@@ -541,41 +543,28 @@ const couponDiscount = (coupon, subtotal) => {
   const capped = coupon.maxDiscount ? Math.min(raw, Number(coupon.maxDiscount)) : raw;
   return Math.min(subtotal, Math.max(0, Math.floor(capped)));
 };
-const validateCoupon = async (code, subtotal) => {
+const validateCoupon = async (code, rows) => {
   const cleanCode = code?.trim().toUpperCase();
   if (!cleanCode) return { coupon: null, discount: 0 };
   if (!couponsReady()) throw new Error("Coupon setup is not ready. Please run Prisma db push and generate, then restart the server.");
-  const coupon = await prisma.coupon.findUnique({ where: { code: cleanCode } });
+  const coupon = await prisma.coupon.findUnique({ where: { code: cleanCode }, include: { category: true } });
   const now = new Date();
   if (!coupon || !coupon.active) throw new Error("Coupon code is not valid.");
   if (coupon.startsAt && coupon.startsAt > now) throw new Error("Coupon code is not active yet.");
   if (coupon.expiresAt && coupon.expiresAt < now) throw new Error("Coupon code has expired.");
   if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) throw new Error("Coupon usage limit has been reached.");
-  if (subtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - subtotal} more to use this coupon.`);
-  return { coupon, discount: couponDiscount(coupon, subtotal) };
+  const eligibleSubtotal = rows
+    .filter((row) => coupon.categoryId === null || row.categoryId === coupon.categoryId)
+    .reduce((sum, row) => sum + Number(row.price) * row.quantity, 0);
+  if (coupon.categoryId !== null && eligibleSubtotal <= 0) throw new Error(`This coupon applies only to items in ${coupon.category?.name || "the selected category"}.`);
+  if (eligibleSubtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - eligibleSubtotal} more in ${coupon.category?.name || "eligible items"} to use this coupon.`);
+  return { coupon, discount: couponDiscount(coupon, eligibleSubtotal) };
 };
 const orderTotals = async ({ items, couponCode, customer }) => {
   const rows = await cartRows(items);
   const subtotal = rows.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0);
-  let delivery = 0;
-  
-  if (customer && customer.state && customer.city) {
-    const state = customer.state.toLowerCase();
-    const city = customer.city.toLowerCase();
-    const isAP = state.includes("ap") || state.includes("andhra");
-    const isTS = state.includes("ts") || state.includes("telangana");
-    const isVizag = city.includes("vizag") || city.includes("visakhapatnam");
-
-    if (!isAP && !isTS) {
-      throw new Error("We currently deliver exclusively within Andhra Pradesh (AP) and Telangana (TS).");
-    }
-
-    if (isVizag) {
-      delivery = subtotal >= 2500 ? 0 : 60;
-    }
-  }
-
-  const { coupon, discount } = await validateCoupon(couponCode, subtotal);
+  const delivery = await calculateDelivery(customer);
+  const { coupon, discount } = await validateCoupon(couponCode, rows);
   return { rows, subtotal, delivery, coupon, discount, total: subtotal + delivery - discount };
 };
 const verifyRazorpayPayment = ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
@@ -697,6 +686,34 @@ const homeSettingsShape = async () => {
     WHERE id = ${showcaseCategoryId}
   ` : [];
   return { showcaseCategoryId, showcaseCategory: category ? categoryShape(category) : null, logoImages, whatsappButtonImage, storeOpen };
+};
+const deliverySettingsShape = async () => {
+  const rows = await prisma.$queryRaw`
+    SELECT key, value FROM "SiteSetting"
+    WHERE key IN ('delivery_free_enabled', 'delivery_vizag_charge', 'delivery_other_charge')
+  `;
+  const settings = Object.fromEntries(rows.map(({ key, value }) => [key, value]));
+  const charge = (key, fallback) => {
+    const parsed = Number(settings[key]);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  };
+  return {
+    freeDelivery: settings.delivery_free_enabled === "true",
+    vizagCharge: charge("delivery_vizag_charge", 60),
+    otherCharge: charge("delivery_other_charge", 0)
+  };
+};
+const calculateDelivery = async (customer) => {
+  if (!customer?.city?.trim() || !customer?.state?.trim()) throw new Error("Enter your city and state to calculate delivery.");
+  const state = customer.state.toLowerCase();
+  const city = customer.city.toLowerCase();
+  const isAP = state.includes("ap") || state.includes("andhra");
+  const isTS = state.includes("ts") || state.includes("telangana");
+  if (!isAP && !isTS) throw new Error("We currently deliver exclusively within Andhra Pradesh (AP) and Telangana (TS).");
+  const settings = await deliverySettingsShape();
+  if (settings.freeDelivery) return 0;
+  const isVizag = city.includes("vizag") || city.includes("visakhapatnam");
+  return isVizag ? settings.vizagCharge : settings.otherCharge;
 };
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", database: "postgresql" }));
@@ -941,6 +958,11 @@ app.get("/api/home-settings", async (_req, res, next) => {
     res.json(await homeSettingsShape());
   } catch (e) { next(e); }
 });
+app.get("/api/delivery-settings", async (_req, res, next) => {
+  try {
+    res.json(await deliverySettingsShape());
+  } catch (e) { next(e); }
+});
 app.post("/api/categories", auth(Role.ADMIN), async (req, res, next) => {
   try {
     const name = req.body.name?.trim();
@@ -1064,6 +1086,35 @@ app.put("/api/admin/home-settings", auth(Role.ADMIN), async (req, res, next) => 
   } catch (e) { next(e); }
 });
 
+app.get("/api/admin/delivery-settings", auth(Role.ADMIN), async (_req, res, next) => {
+  try {
+    res.json(await deliverySettingsShape());
+  } catch (e) { next(e); }
+});
+
+app.put("/api/admin/delivery-settings", auth(Role.ADMIN), async (req, res, next) => {
+  try {
+    const vizagCharge = Number(req.body.vizagCharge);
+    const otherCharge = Number(req.body.otherCharge);
+    if (typeof req.body.freeDelivery !== "boolean") return res.status(400).json({ message: "Choose whether free delivery is enabled." });
+    if (!Number.isFinite(vizagCharge) || vizagCharge < 0 || !Number.isFinite(otherCharge) || otherCharge < 0) {
+      return res.status(400).json({ message: "Delivery charges must be valid amounts of 0 or more." });
+    }
+    for (const [key, value] of [
+      ["delivery_free_enabled", String(req.body.freeDelivery)],
+      ["delivery_vizag_charge", String(vizagCharge)],
+      ["delivery_other_charge", String(otherCharge)]
+    ]) {
+      await prisma.$executeRaw`
+        INSERT INTO "SiteSetting" (key, value, "updatedAt")
+        VALUES (${key}, ${value}, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()
+      `;
+    }
+    res.json(await deliverySettingsShape());
+  } catch (e) { next(e); }
+});
+
 app.get("/api/admin/admins", auth(Role.ADMIN), async (_req, res, next) => {
   try {
     const admins = await prisma.user.findMany({
@@ -1089,7 +1140,7 @@ app.get("/api/admin/customers", auth(Role.ADMIN), async (_req, res, next) => {
 app.get("/api/admin/coupons", auth(Role.ADMIN), async (_req, res, next) => {
   try {
     if (!couponsReady()) return res.json([]);
-    const coupons = await prisma.coupon.findMany({ orderBy: { createdAt: "desc" } });
+    const coupons = await prisma.coupon.findMany({ include: { category: true }, orderBy: { createdAt: "desc" } });
     res.json(coupons.map(couponShape));
   } catch (e) { next(e); }
 });
@@ -1128,7 +1179,7 @@ app.post("/api/coupons/validate", async (req, res, next) => {
   try {
     const rows = await cartRows(req.body.items);
     const subtotal = rows.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0);
-    const { coupon, discount } = await validateCoupon(req.body.code, subtotal);
+    const { coupon, discount } = await validateCoupon(req.body.code, rows);
     res.json({ coupon: couponShape(coupon), discount, subtotal, totalAfterDiscount: subtotal - discount });
   } catch (e) { next(e); }
 });

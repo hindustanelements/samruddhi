@@ -21,6 +21,12 @@ Full-stack organic pantry and traditional clay cookware store.
 Storefront: `http://localhost:3000`
 API: `http://localhost:5000/api`
 
+If the frontend reports `Request failed: /admin/coupons (404)` or `Request failed: /admin/delivery-settings (404)`, restart the backend so it loads the current API routes:
+
+1. Stop the running backend in its terminal with `Ctrl+C`.
+2. From the project root, run `npm run dev --prefix backend`.
+3. Reload the admin page. The frontend should continue proxying API requests to `http://localhost:5000`.
+
 Seed admin: `venukoyyana908@gmail.com` / `Admin@123`
 
 ## Environment
@@ -45,6 +51,13 @@ API_PROXY_TARGET="http://localhost:5000"
 The backend starts with `prisma migrate deploy`. The migration files in `backend/prisma/migrations` must be committed and included in the deployment image. The `20260910000000_add_order_state` migration adds the `Order.state` column required by the orders and cash-on-delivery endpoints.
 
 Use `prisma migrate deploy` in production. Do not run `prisma db push`, `prisma migrate reset`, or the seed command against the production database: those workflows can change or replace schema/data unexpectedly.
+
+When API routes are added or changed, deploy the backend as well as the frontend. Updating only the frontend leaves the old API running and causes these endpoints to return 404.
+
+- With the root `Dockerfile` (combined frontend/backend image), rebuild and redeploy the whole application image.
+- With separate services, rebuild/redeploy the backend from `backend/Dockerfile` and the frontend from `frontend/Dockerfile`. Configure the frontend build argument `API_PROXY_TARGET` to the backend's reachable internal URL, such as `http://backend:5000`, then rebuild the frontend because Next.js stores rewrites at build time.
+- Confirm the deployed backend serves `GET /api/delivery-settings`. The admin coupon routes are `GET/POST /api/admin/coupons` and `PUT/DELETE /api/admin/coupons/:id`; an unauthenticated request should return an authorization error, not 404.
+- The category-restricted coupon feature also requires the `20260926000000_add_coupon_category` migration to be applied to the production database. Ensure the deployment's migration step completes successfully before testing coupons.
 
 Keep these two storage locations persistent across releases:
 
