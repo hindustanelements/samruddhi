@@ -1032,6 +1032,136 @@ app.delete("/api/categories/:id", auth(Role.ADMIN), async (req, res, next) => {
     res.status(204).end();
   } catch (e) { next(e); }
 });
+// ── Visitor Tracking ──────────────────────────────────────────────────────────
+
+const hashIp = (ip) => crypto.createHash("sha256").update(ip || "unknown").digest("hex");
+
+const parseDevice = (ua = "") => {
+  if (/tablet|ipad/i.test(ua)) return "Tablet";
+  if (/mobile|android|iphone|ipod|blackberry|windows phone/i.test(ua)) return "Mobile";
+  return "Desktop";
+};
+
+const parseBrowser = (ua = "") => {
+  if (/edg\//i.test(ua)) return "Edge";
+  if (/opr\//i.test(ua)) return "Opera";
+  if (/chrome|chromium/i.test(ua)) return "Chrome";
+  if (/firefox/i.test(ua)) return "Firefox";
+  if (/safari/i.test(ua)) return "Safari";
+  if (/msie|trident/i.test(ua)) return "IE";
+  return "Other";
+};
+
+const geoLookup = async (ip) => {
+  if (!ip || ip === "::1" || ip.startsWith("127.") || ip.startsWith("192.168.") || ip.startsWith("10.")) {
+    return { country: null, city: null };
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1000);
+    const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,city`, { signal: controller.signal });
+    clearTimeout(timer);
+    const data = await res.json();
+    if (data.status === "success") return { country: data.country || null, city: data.city || null };
+  } catch { /* geo lookup failed silently */ }
+  return { country: null, city: null };
+};
+
+// Public endpoint — called silently from frontend on every page load
+app.post("/api/track", async (req, res) => {
+  try {
+    const ip = (req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "").split(",")[0].trim();
+    const ua = req.headers["user-agent"] || "";
+    const { path = "/", referrer } = req.body || {};
+    const ipHash = hashIp(ip);
+    const device = parseDevice(ua);
+    const browser = parseBrowser(ua);
+    const ref = referrer ? String(referrer).slice(0, 200) : null;
+    const safePath = String(path).slice(0, 500);
+    const { country, city } = await geoLookup(ip);
+    await prisma.siteVisit.create({
+      data: { path: safePath, ipHash, device, browser, country, city, referrer: ref }
+    });
+    res.status(204).end();
+  } catch { res.status(204).end(); } // always succeed silently
+});
+
+// Admin endpoint — visitor analytics
+app.get("/api/admin/visitors", auth(Role.ADMIN), async (_req, res, next) => {
+  try {
+    const [totals] = await prisma.$queryRaw`
+      SELECT
+        COUNT(*)::int AS "totalVisits",
+        COUNT(DISTINCT "ipHash")::int AS "uniqueVisitors",
+        COUNT(*) FILTER (WHERE "createdAt" >= CURRENT_DATE)::int AS "todayVisits",
+        COUNT(*) FILTER (WHERE "createdAt" >= CURRENT_DATE - INTERVAL '7 days')::int AS "weekVisits"
+      FROM "SiteVisit"
+    `;
+    const topPages = await prisma.$queryRaw`
+      SELECT path, COUNT(*)::int AS count
+      FROM "SiteVisit"
+      GROUP BY path
+      ORDER BY count DESC
+      LIMIT 10
+    `;
+    const deviceBreakdown = await prisma.$queryRaw`
+      SELECT COALESCE(device, 'Unknown') AS device, COUNT(*)::int AS count
+      FROM "SiteVisit"
+      GROUP BY device
+      ORDER BY count DESC
+    `;
+    const countryBreakdown = await prisma.$queryRaw`
+      SELECT COALESCE(country, 'Unknown') AS country, COUNT(*)::int AS count
+      FROM "SiteVisit"
+      GROUP BY country
+      ORDER BY count DESC
+      LIMIT 10
+    `;
+    const browserBreakdown = await prisma.$queryRaw`
+      SELECT COALESCE(browser, 'Unknown') AS browser, COUNT(*)::int AS count
+      FROM "SiteVisit"
+      GROUP BY browser
+      ORDER BY count DESC
+    `;
+    const recentRawVisits = await prisma.siteVisit.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    
+    const visitorsMap = new Map();
+    for (const v of recentRawVisits) {
+      if (!visitorsMap.has(v.ipHash)) {
+        visitorsMap.set(v.ipHash, {
+          id: v.ipHash,
+          device: v.device,
+          browser: v.browser,
+          country: v.country,
+          city: v.city,
+          lastVisit: v.createdAt,
+          totalPageViews: 0,
+          pages: []
+        });
+      }
+      const visitor = visitorsMap.get(v.ipHash);
+      visitor.totalPageViews += 1;
+      visitor.pages.push({ path: v.path, time: v.createdAt });
+    }
+    const uniqueVisitorsList = Array.from(visitorsMap.values());
+
+    res.json({
+      totalVisits: Number(totals?.totalVisits || 0),
+      uniqueVisitors: Number(totals?.uniqueVisitors || 0),
+      todayVisits: Number(totals?.todayVisits || 0),
+      weekVisits: Number(totals?.weekVisits || 0),
+      topPages,
+      deviceBreakdown,
+      countryBreakdown,
+      browserBreakdown,
+      uniqueVisitorsList
+    });
+  } catch (e) { next(e); }
+});
+
 app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res, next) => {
   try {
     const [overview] = await prisma.$queryRaw`
@@ -1040,14 +1170,18 @@ app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res, next) => {
         (SELECT COUNT(*)::int FROM "Order") AS orders,
         (SELECT COUNT(*)::int FROM "User") AS users,
         (SELECT COUNT(*)::int FROM "ContactSubmission") AS contacts,
-        COALESCE((SELECT SUM(total) FROM "Order"), 0) AS revenue
+        COALESCE((SELECT SUM(total) FROM "Order"), 0) AS revenue,
+        (SELECT COUNT(*)::int FROM "SiteVisit") AS totalvisitors,
+        (SELECT COUNT(*)::int FROM "SiteVisit" WHERE "createdAt" >= CURRENT_DATE) AS todayvisitors
     `;
     res.json({
       products: Number(overview?.products || 0),
       orders: Number(overview?.orders || 0),
       users: Number(overview?.users || 0),
       contacts: Number(overview?.contacts || 0),
-      revenue: Number(overview?.revenue || 0)
+      revenue: Number(overview?.revenue || 0),
+      totalVisitors: Number(overview?.totalvisitors || 0),
+      todayVisitors: Number(overview?.todayvisitors || 0)
     });
   } catch (e) { next(e); }
 });

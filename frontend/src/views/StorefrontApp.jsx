@@ -7,6 +7,7 @@ import Navbar from "../components/Navbar";
 import SiteFooter from "../components/Footer";
 import { Provider } from "../context/AppContext";
 import { request, STORE_WHATSAPP } from "../lib/store";
+import { trackVisit } from "../lib/tracker";
 import { useApp } from "../context/AppContext";
 import AboutPageFile from "./About";
 import Admin from "./Admin";
@@ -63,6 +64,10 @@ function ScrollTop(){
   const {pathname}=useLocation();
   useEffect(()=>{
     window.scrollTo(0,0);
+    // Track visit silently — skip /admin pages so admin activity is not counted
+    if (!pathname.startsWith("/admin")) {
+      trackVisit(pathname);
+    }
   },[pathname]);
   return null
 }

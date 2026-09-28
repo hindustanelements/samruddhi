@@ -184,3 +184,18 @@ model OrderItem {
   quantity  Int
   weight    String
 }
+
+model SiteVisit {
+  id        Int      @id @default(autoincrement())
+  path      String
+  ipHash    String
+  device    String?
+  browser   String?
+  country   String?
+  city      String?
+  referrer  String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([ipHash])
+}
