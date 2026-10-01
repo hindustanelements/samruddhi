@@ -2,54 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Clock3, Leaf, Package, ShieldCheck, Star, Store, Wheat } from "lucide-react";
-import HeroSlider from "../components/HeroSlider";
+import { Leaf, Store, Wheat } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 import SectionHead from "../components/SectionHead";
-import { categoryImage, loadCategories, loadHeroSlides, loadHomeSettings, loadProducts } from "../lib/store";
+import { loadCategories, loadHomeSettings, loadProducts } from "../lib/store";
 
-const fallbackHomeSlides = [
-  {
-    eyebrow: "Organic products",
-    title: "Clean staples for daily Indian cooking",
-    body: "Naturally sourced rice, jaggery, pulses, spices and pantry basics selected for freshness, taste and everyday usefulness.",
-    link: "/products?category=organic-staples",
-    cta: "Shop organic staples",
-    tone: "from-[#f7f0df] via-[#e9f1df] to-[#f5dcc1]",
-    image: "/slide-organic-products.png",
-    highlights: ["Rice and pulses", "Natural jaggery", "Farm-style staples"]
-  },
-  {
-    eyebrow: "Dry fruits",
-    title: "Premium cashews, almonds and festive mixes",
-    body: "Creamy whole cashews, crunchy almonds, raisins and dry fruit blends for snacking, gifting and traditional sweets.",
-    link: "/products?category=dry-fruits",
-    cta: "Shop dry fruits",
-    tone: "from-[#fff4dc] via-[#f5e6c8] to-[#ead3aa]",
-    image: "/slide-dry-fruits.png",
-    highlights: ["Whole cashews", "Gift-ready mixes", "Freshly packed"]
-  },
-  {
-    eyebrow: "Cold pressed oils",
-    title: "Wood-pressed oils with natural character",
-    body: "Small-batch groundnut, sesame and coconut oils made for tadka, chutneys, pickles and everyday home cooking.",
-    link: "/products?category=cold-pressed-oils",
-    cta: "Shop cold pressed oils",
-    tone: "from-[#fff8d8] via-[#f2e2a8] to-[#d9c06f]",
-    image: "/slide-cold-pressed-oils.png",
-    highlights: ["Groundnut oil", "Sesame oil", "No refined blends"]
-  },
-  {
-    eyebrow: "Mitti products",
-    title: "Terracotta cookware and cooling waterware",
-    body: "Clay handis, tawa, curd pots, water bottles and matkas shaped for slow cooking, natural cooling and earthy table service.",
-    link: "/products?category=mitti-cookware",
-    cta: "Shop mitti products",
-    tone: "from-[#f3dfc4] via-[#e2b98d] to-[#b86b42]",
-    image: "/slide-mitti-products.png",
-    highlights: ["Clay handi", "Water matka", "Curd pots"]
-  }
-];
+
 
 function shuffleProducts(items) {
   const shuffled = [...items];
@@ -64,16 +22,20 @@ function Home() {
   const pageSize = 24;
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [slides, setSlides] = useState(fallbackHomeSlides);
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [visibleCategoryCount, setVisibleCategoryCount] = useState(0);
+  //const [slides, setSlides] = useState(fallbackHomeSlides);
   const [homeSettings, setHomeSettings] = useState({showcaseCategoryId:null, storeOpen:true});
-  const [slide, setSlide] = useState(0);
   const [showcaseProducts, setShowcaseProducts] = useState([]);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const productsEndRef = useRef(null);
-  const activeSlide = { ...slides[slide], slides };
+  const categoryBarRef = useRef(null);
+  const categoryMeasureRef = useRef(null);
+  //const activeSlide = { ...slides[slide], slides };
   const showcaseCategory = categories.find((c) => c.id === homeSettings.showcaseCategoryId) || categories.find((c) => c.slug === "mitti-cookware") || categories.find((c) => products.some((p) => p.category?.id === c.id));
+  const moreCategories = visibleCategoryCount < categories.length ? categories.slice(visibleCategoryCount) : categories;
   useEffect(() => {
     if (!showcaseCategory) {
       setShowcaseProducts([]);
@@ -101,7 +63,6 @@ function Home() {
       .catch(() => setHasMore(false));
     loadCategories().then(setCategories);
     loadHomeSettings().then(setHomeSettings).catch(()=>{});
-    loadHeroSlides().then((items)=>{ if(items.length) setSlides(items); }).catch(()=>{});
   }, []);
   useEffect(() => {
     const target = productsEndRef.current;
@@ -126,29 +87,103 @@ function Home() {
     return () => observer.disconnect();
   }, [loadingMore, hasMore, page]);
   useEffect(() => {
-    const timer = setInterval(() => setSlide((current) => (current + 1) % slides.length), 4500);
-    return () => clearInterval(timer);
-  }, [slides.length]);
+    const bar = categoryBarRef.current;
+    const measure = categoryMeasureRef.current;
+    if (!bar || !measure || !categories.length) {
+      setVisibleCategoryCount(0);
+      return undefined;
+    }
+
+    const updateVisibleCount = () => {
+      const availableWidth = bar.clientWidth;
+      if (!availableWidth) return;
+
+      const categoryWidths = [...measure.querySelectorAll("[data-category-measure]")]
+        .map((item) => item.getBoundingClientRect().width);
+      const moreWidths = [...measure.querySelectorAll("[data-category-more]")]
+        .map((item) => item.getBoundingClientRect().width);
+      const moreWidth = Math.max(...moreWidths, 0);
+      const gap = Number.parseFloat(window.getComputedStyle(measure).columnGap) || 0;
+
+      let usedWidth = 0;
+      let count = 0;
+      for (let index = 0; index < categoryWidths.length; index += 1) {
+        const nextWidth = usedWidth + (count ? gap : 0) + categoryWidths[index];
+        const needsMoreButton = index < categoryWidths.length - 1;
+        const reservedWidth = needsMoreButton ? gap + moreWidth : 0;
+        if (nextWidth + reservedWidth > availableWidth) break;
+        usedWidth = nextWidth;
+        count += 1;
+      }
+
+      setVisibleCategoryCount(count);
+      if (count === categories.length) setShowAllCategories(false);
+    };
+
+    updateVisibleCount();
+    const observer = new ResizeObserver(updateVisibleCount);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [categories]);
+  // useEffect(() => {
+  //   const timer = setInterval(() => setSlide((current) => (current + 1) % slides.length), 4500);
+  //   return () => clearInterval(timer);
+  // }, [slides.length]);
   return <main>
-    {!homeSettings.storeOpen && <div className="bg-clay px-5 py-4 text-center text-sm font-bold text-white">🙏 Store was closed 🙏</div>}
-    <HeroSlider slide={slide} activeSlide={activeSlide}/>
+    {!homeSettings.storeOpen && <div className="bg-clay px-1 py-1 text-center text-sm font-bold text-white">🙏 Store was closed 🙏</div>}
+    {/* <HeroSlider slide={slide} activeSlide={activeSlide}/> */}
 
     {/* <section className="border-b border-forest/10 bg-white py-7"><div className="container-site grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{[
       [Leaf,"Natural clay craft","Hand-finished kitchenware"],[ShieldCheck,"Clean pantry","No needless additives"],[Package,"Freshly packed","Small batches, careful handling"],[Clock3,"Tradition first","Millets, cashews and clay"]
     ].map(([I,t,d])=><div key={t} className="flex items-center gap-4"><span className="grid h-11 w-11 place-items-center rounded-full bg-cream text-leaf"><I size={20}/></span><div><strong className="text-sm text-forest">{t}</strong><p className="text-xs text-ink/50">{d}</p></div></div>)}</div></section> */}
 
-    <section className="container-site py-5">
-      <SectionHead eyebrow="Shop by category" title="Goodness, thoughtfully gathered" body="Inspired by traditional Indian kitchens: clay handis and water pots, premium cashews, ancient millets, spices, oils and daily staples." link="/products"/>
-      <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">{categories.map((c)=><Link key={c.id} to={`/products?category=${c.slug}`} className="group overflow-hidden rounded-[1.5rem] border border-forest/10 bg-white transition hover:-translate-y-1 hover:shadow-soft"><img src={categoryImage(c)} alt={c.name} className="aspect-[4/3] w-full bg-oat object-cover transition duration-500 group-hover:scale-105" onError={e=>e.currentTarget.src="/samruddhi-hero.png"}/><div className="p-4"><h3 className="text-lg leading-tight text-forest">{c.name}</h3></div></Link>)}</div>
+    <section className="container-site py-1">
+      <div ref={categoryBarRef} className="flex min-w-0 items-center gap-5 whitespace-nowrap">
+        {categories.slice(0, visibleCategoryCount).map((category) => (
+          <Link
+            key={category.id}
+            to={`/products?category=${category.slug}`}
+            className="shrink-0 text-sm font-medium text-ink/70 transition-colors hover:text-forest"
+          >
+            {category.name}
+          </Link>
+        ))}
+        {categories.length > 0 && <button
+            type="button"
+            onClick={() => setShowAllCategories((open) => !open)}
+            aria-expanded={showAllCategories}
+            aria-controls="all-home-categories"
+            className="shrink-0 text-sm font-bold text-forest hover:text-leaf"
+          >
+            {showAllCategories ? "View less" : "View more"}
+          </button>}
+      </div>
+      {showAllCategories && <div id="all-home-categories" className="mt-2 flex max-h-72 w-full max-w-sm flex-col overflow-y-auto rounded-xl border border-forest/10 bg-white p-2 shadow-soft">
+        {moreCategories.map((category) => (
+          <Link
+            key={category.id}
+            to={`/products?category=${category.slug}`}
+            onClick={() => setShowAllCategories(false)}
+            className="rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-cream hover:text-forest"
+          >
+            {category.name}
+          </Link>
+        ))}
+      </div>}
+      <div ref={categoryMeasureRef} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 -z-10 flex w-max items-center gap-5 whitespace-nowrap">
+        {categories.map((category) => <span key={category.id} data-category-measure className="shrink-0 text-sm font-medium">{category.name}</span>)}
+        <span data-category-more className="shrink-0 text-sm font-bold">View more</span>
+        <span data-category-more className="shrink-0 text-sm font-bold">View less</span>
+      </div>
     </section>
 
     {showcaseProducts.length > 0 && <section className="bg-white py-5"><div className="container-site">
-      <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} body={showcaseCategory.description || "Fresh products from the current catalogue, loaded directly from your database."} link={`/products?category=${showcaseCategory.slug}`}/>
-      <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
-      <div className="mt-10 flex justify-center"><Link to={`/products?category=${showcaseCategory.slug}`} className="btn-light">View More Products</Link></div>
+      <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} link={`/products?category=${showcaseCategory.slug}`}/>
+      <div className="grid grid-cols-2 gap-10 md:grid-cols-4 lg:grid-cols-6">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
+      <div className="mt-5 flex justify-center"><Link to={`/products?category=${showcaseCategory.slug}`} className="btn-light">View More Products</Link></div>
     </div></section>}
 
-    <section className="bg-[#f0eadc] py-5"><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-4">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div><div ref={productsEndRef} className="min-h-16 pt-8 text-center text-sm font-semibold text-ink/40" aria-live="polite">{loadingMore && "Gathering more products..."}</div></div></section>
+    <section><div className="container-site"><SectionHead eyebrow="Products" title="" body="Fresh picks our community returns to, week after week." link="/products"/><div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-6">{products.map(p=><ProductCard key={p.id} product={p}/>)}</div><div ref={productsEndRef} className="min-h-8 pt-4 text-center text-sm font-semibold text-ink/40" aria-live="polite">{loadingMore && "Gathering more products..."}</div></div></section>
 
     {/* <section className="container-site py-20">
       <div className="grid overflow-hidden rounded-[2rem] bg-forest lg:grid-cols-2">

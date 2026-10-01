@@ -785,16 +785,20 @@ app.post("/api/auth/register", async (req, res, next) => {
 app.post("/api/auth/continue", async (req, res, next) => {
   try {
     const name = req.body.name?.trim();
+    const mobile = req.body.mobile?.trim();
     const email = req.body.email?.trim().toLowerCase();
     const password = req.body.password || "";
 
-    if (!name || !email || password.length < 6) {
-      return res.status(400).json({ message: "Name, email and a 6+ character password are required." });
+    if (!name || !mobile || !email || password.length < 6) {
+      return res.status(400).json({ message: "Name, mobile, email and a 6+ character password are required." });
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (user) {
+      if (user.role !== Role.USER) {
+        return res.status(403).json({ message: "Use the staff login to access this account." });
+      }
       if (!(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ message: "Invalid password." });
       }
@@ -803,7 +807,7 @@ app.post("/api/auth/continue", async (req, res, next) => {
     }
 
     const created = await prisma.user.create({
-      data: { name, email, password: await bcrypt.hash(password, 12) }
+      data: { name, mobile, email, password: await bcrypt.hash(password, 12) }
     });
 
     await sendEmail({
