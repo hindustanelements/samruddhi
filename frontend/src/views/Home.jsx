@@ -2,21 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Leaf, Store, Wheat } from "lucide-react";
+import { ChevronDown, Leaf, Store, Wheat } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 import SectionHead from "../components/SectionHead";
 import { loadCategories, loadHomeSettings, loadProducts } from "../lib/store";
 
-
-
-function shuffleProducts(items) {
-  const shuffled = [...items];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
-  }
-  return shuffled;
+function sortAvailableFirst(items) {
+  return [...items].sort((a, b) => (Number(b.stock) > 0 ? 1 : 0) - (Number(a.stock) > 0 ? 1 : 0));
 }
+
 
 function Home() {
   const pageSize = 24;
@@ -42,7 +36,7 @@ function Home() {
       return undefined;
     }
     let active = true;
-    loadProducts(`/products?category=${encodeURIComponent(showcaseCategory.slug)}&page=1&limit=20`)
+    loadProducts(`/products?category=${encodeURIComponent(showcaseCategory.slug)}&sort=stock&inStock=true&page=1&limit=20`)
       .then((items) => {
         if (active) setShowcaseProducts(Array.isArray(items) ? items : []);
       })
@@ -54,10 +48,10 @@ function Home() {
     };
   }, [showcaseCategory?.slug]);
   useEffect(() => {
-    loadProducts(`/products?page=1&limit=${pageSize}`)
+    loadProducts(`/products?sort=stock&page=1&limit=${pageSize}`)
       .then((items) => {
         const loadedProducts = Array.isArray(items) ? items : [];
-        setProducts(shuffleProducts(loadedProducts));
+        setProducts(sortAvailableFirst(loadedProducts));
         setHasMore(loadedProducts.length === pageSize);
       })
       .catch(() => setHasMore(false));
@@ -72,10 +66,10 @@ function Home() {
       if (!entry.isIntersecting) return;
       const nextPage = page + 1;
       setLoadingMore(true);
-      loadProducts(`/products?page=${nextPage}&limit=${pageSize}`)
+      loadProducts(`/products?sort=stock&page=${nextPage}&limit=${pageSize}`)
         .then((items) => {
           const loadedProducts = Array.isArray(items) ? items : [];
-          setProducts((currentProducts) => [...currentProducts, ...loadedProducts]);
+          setProducts((currentProducts) => sortAvailableFirst([...currentProducts, ...loadedProducts]));
           setPage(nextPage);
           setHasMore(loadedProducts.length === pageSize);
         })
@@ -137,7 +131,7 @@ function Home() {
       [Leaf,"Natural clay craft","Hand-finished kitchenware"],[ShieldCheck,"Clean pantry","No needless additives"],[Package,"Freshly packed","Small batches, careful handling"],[Clock3,"Tradition first","Millets, cashews and clay"]
     ].map(([I,t,d])=><div key={t} className="flex items-center gap-4"><span className="grid h-11 w-11 place-items-center rounded-full bg-cream text-leaf"><I size={20}/></span><div><strong className="text-sm text-forest">{t}</strong><p className="text-xs text-ink/50">{d}</p></div></div>)}</div></section> */}
 
-    <section className="container-site py-1">
+    <section className="container-site mt-2 py-1">
       <div ref={categoryBarRef} className="flex min-w-0 items-center gap-5 whitespace-nowrap">
         {categories.slice(0, visibleCategoryCount).map((category) => (
           <Link
@@ -148,28 +142,31 @@ function Home() {
             {category.name}
           </Link>
         ))}
-        {categories.length > 0 && <button
+        {categories.length > 0 && <div className="relative ml-auto shrink-0">
+          <button
             type="button"
             onClick={() => setShowAllCategories((open) => !open)}
             aria-expanded={showAllCategories}
             aria-controls="all-home-categories"
-            className="shrink-0 text-sm font-bold text-forest hover:text-leaf"
+            className="inline-flex items-center gap-1 text-sm font-bold text-forest hover:text-leaf"
           >
             {showAllCategories ? "View less" : "View more"}
-          </button>}
+            <ChevronDown size={16} className={`transition-transform ${showAllCategories ? "rotate-180" : ""}`}/>
+          </button>
+          {showAllCategories && <div id="all-home-categories" className="absolute right-0 top-full z-40 mt-2 flex max-h-72 w-56 max-w-[calc(100vw-2rem)] flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-forest/10 bg-white p-2 shadow-soft">
+            {moreCategories.map((category) => (
+              <Link
+                key={category.id}
+                to={`/products?category=${category.slug}`}
+                onClick={() => setShowAllCategories(false)}
+                className="truncate rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-cream hover:text-forest"
+              >
+                {category.name}
+              </Link>
+            ))}
+          </div>}
+        </div>}
       </div>
-      {showAllCategories && <div id="all-home-categories" className="mt-2 flex max-h-72 w-full max-w-sm flex-col overflow-y-auto rounded-xl border border-forest/10 bg-white p-2 shadow-soft">
-        {moreCategories.map((category) => (
-          <Link
-            key={category.id}
-            to={`/products?category=${category.slug}`}
-            onClick={() => setShowAllCategories(false)}
-            className="rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-cream hover:text-forest"
-          >
-            {category.name}
-          </Link>
-        ))}
-      </div>}
       <div ref={categoryMeasureRef} aria-hidden="true" className="pointer-events-none invisible fixed left-0 top-0 -z-10 flex w-max items-center gap-5 whitespace-nowrap">
         {categories.map((category) => <span key={category.id} data-category-measure className="shrink-0 text-sm font-medium">{category.name}</span>)}
         <span data-category-more className="shrink-0 text-sm font-bold">View more</span>

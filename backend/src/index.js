@@ -1613,6 +1613,8 @@ app.get("/api/products", async (req, res) => {
         WHEN c.name ILIKE ${searchPattern} THEN 3
         ELSE 4
       END, p.name ASC`
+    : sort === "stock"
+    ? Prisma.sql`(p.stock > 0) DESC, p."createdAt" DESC`
     : sort === "price-low"
     ? Prisma.sql`p."discountPrice" ASC NULLS LAST, p.price ASC`
     : sort === "price-high"
