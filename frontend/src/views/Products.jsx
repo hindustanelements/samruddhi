@@ -15,6 +15,10 @@ function shuffleProducts(items) {
   return shuffled;
 }
 
+function sortAvailableFirst(items) {
+  return [...items].sort((a, b) => (Number(b.stock) > 0 ? 1 : 0) - (Number(a.stock) > 0 ? 1 : 0));
+}
+
 function Products() {
   const pageSize = 24;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -43,7 +47,7 @@ function Products() {
       .then((data) => {
         if (isMounted) {
           const loadedProducts = Array.isArray(data) ? data : [];
-          setProducts(sort === "newest" ? shuffleProducts(loadedProducts) : loadedProducts);
+          setProducts(sortAvailableFirst(sort === "newest" ? shuffleProducts(loadedProducts) : loadedProducts));
           setHasMore(loadedProducts.length === pageSize);
         }
       })
@@ -76,7 +80,7 @@ function Products() {
       loadProducts(`/products?${params.toString()}`)
         .then((data) => {
           const loadedProducts = Array.isArray(data) ? data : [];
-          setProducts((currentProducts) => [...currentProducts, ...loadedProducts]);
+          setProducts((currentProducts) => sortAvailableFirst([...currentProducts, ...loadedProducts]));
           setPage(nextPage);
           setHasMore(loadedProducts.length === pageSize);
         })
@@ -199,7 +203,7 @@ function Products() {
             <div className="py-24 text-center text-ink/40 font-semibold">Gathering the pantry...</div>
           ) : shown.length > 0 ? (
             <>
-              <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-6">
                 {shown.map((p) => (
                   <ProductCard key={p.id} product={p} />
                 ))}

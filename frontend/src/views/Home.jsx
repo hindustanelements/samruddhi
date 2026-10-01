@@ -153,13 +153,13 @@ function Home() {
             {showAllCategories ? "View less" : "View more"}
             <ChevronDown size={16} className={`transition-transform ${showAllCategories ? "rotate-180" : ""}`}/>
           </button>
-          {showAllCategories && <div id="all-home-categories" className="absolute right-0 top-full z-40 mt-2 flex max-h-72 w-56 max-w-[calc(100vw-2rem)] flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-forest/10 bg-white p-2 shadow-soft">
+          {showAllCategories && <div id="all-home-categories" className="absolute right-0 top-full z-40 mt-2 flex max-h-72 w-[calc(100vw-2rem)] max-w-sm flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-forest/10 bg-white p-2 shadow-soft sm:w-72">
             {moreCategories.map((category) => (
               <Link
                 key={category.id}
                 to={`/products?category=${category.slug}`}
                 onClick={() => setShowAllCategories(false)}
-                className="truncate rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-cream hover:text-forest"
+                className="whitespace-normal break-words rounded-lg px-3 py-2 text-sm text-ink/70 hover:bg-cream hover:text-forest"
               >
                 {category.name}
               </Link>
@@ -176,7 +176,7 @@ function Home() {
 
     {showcaseProducts.length > 0 && <section className="bg-white py-5"><div className="container-site">
       <SectionHead eyebrow={showcaseCategory.name} title={`${showcaseCategory.name} products`} link={`/products?category=${showcaseCategory.slug}`}/>
-      <div className="grid grid-cols-2 gap-10 md:grid-cols-4 lg:grid-cols-6">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
+      <div className="grid grid-cols-2 gap-5 md:grid-cols-4 lg:grid-cols-6">{showcaseProducts.map((p)=><ProductCard key={p.id} product={p}/>)}</div>
       <div className="mt-5 flex justify-center"><Link to={`/products?category=${showcaseCategory.slug}`} className="btn-light">View More Products</Link></div>
     </div></section>}
 

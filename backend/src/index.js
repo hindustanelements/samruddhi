@@ -1607,7 +1607,7 @@ app.get("/api/products", async (req, res) => {
     p."seoKeywords" ILIKE ${searchPattern}
   )`);
   const orderBy = searchTerm
-    ? Prisma.sql`CASE
+    ? Prisma.sql`(p.stock > 0) DESC, CASE
         WHEN p.name ILIKE ${searchPrefix} THEN 1
         WHEN p.name ILIKE ${searchPattern} THEN 2
         WHEN c.name ILIKE ${searchPattern} THEN 3
@@ -1616,14 +1616,14 @@ app.get("/api/products", async (req, res) => {
     : sort === "stock"
     ? Prisma.sql`(p.stock > 0) DESC, p."createdAt" DESC`
     : sort === "price-low"
-    ? Prisma.sql`p."discountPrice" ASC NULLS LAST, p.price ASC`
+    ? Prisma.sql`(p.stock > 0) DESC, p."discountPrice" ASC NULLS LAST, p.price ASC`
     : sort === "price-high"
-    ? Prisma.sql`p."discountPrice" DESC NULLS LAST, p.price DESC`
+    ? Prisma.sql`(p.stock > 0) DESC, p."discountPrice" DESC NULLS LAST, p.price DESC`
     : sort === "bestsellers"
-    ? Prisma.sql`p.bestseller DESC, p."createdAt" DESC`
+    ? Prisma.sql`(p.stock > 0) DESC, p.bestseller DESC, p."createdAt" DESC`
     : sort === "name" || sort === "alpha"
-    ? Prisma.sql`p.name ASC`
-    : Prisma.sql`p."createdAt" DESC`;
+    ? Prisma.sql`(p.stock > 0) DESC, p.name ASC`
+    : Prisma.sql`(p.stock > 0) DESC, p."createdAt" DESC`;
   const products = await prisma.$queryRaw(Prisma.sql`
     SELECT
       p.id, p.name, p.slug, p.sku, p.unit, p."shortDescription",
