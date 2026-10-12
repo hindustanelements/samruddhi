@@ -1709,7 +1709,7 @@ app.post("/api/orders", async (req, res, next) => {
     const order = await prisma.$transaction(async (tx) => {
       for (const row of rows) await tx.product.update({ where: { id: row.productId }, data: { stock: { decrement: row.quantity } } });
       if (coupon) await tx.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
-      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...customer, paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows } }, include: { items: true } });
+      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...customer, paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows.map(({ productId, name, price, quantity, weight }) => ({ productId, name, price, quantity, weight })) } }, include: { items: true } });
     });
 
     await sendNewOrderPush(order).catch((error) => {
