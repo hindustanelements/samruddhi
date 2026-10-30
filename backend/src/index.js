@@ -713,12 +713,8 @@ const deliverySettingsShape = async () => {
   };
 };
 const calculateDelivery = async (customer) => {
-  if (!customer?.city?.trim() || !customer?.state?.trim()) throw new Error("Enter your city and state to calculate delivery.");
-  const state = customer.state.toLowerCase();
+  if (!customer?.city?.trim()) throw new Error("Enter your city to calculate delivery.");
   const city = customer.city.toLowerCase();
-  const isAP = state.includes("ap") || state.includes("andhra");
-  const isTS = state.includes("ts") || state.includes("telangana");
-  if (!isAP && !isTS) throw new Error("We currently deliver exclusively within Andhra Pradesh (AP) and Telangana (TS).");
   const settings = await deliverySettingsShape();
   if (settings.freeDelivery) return 0;
   const isVizag = city.includes("vizag") || city.includes("visakhapatnam");
@@ -1693,8 +1689,14 @@ app.delete("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
 app.post("/api/orders", async (req, res, next) => {
   try {
     const { customer, items, paymentMethod = "COD", couponCode, razorpay } = req.body;
+    const orderCustomer = {
+      customerName: customer?.customerName,
+      mobile: customer?.mobile,
+      address: customer?.address,
+      city: customer?.city
+    };
     const method = paymentMethod === "ONLINE" ? "ONLINE" : "COD";
-    const { rows, subtotal, delivery, coupon, discount, total } = await orderTotals({ items, couponCode, customer });
+    const { rows, subtotal, delivery, coupon, discount, total } = await orderTotals({ items, couponCode, customer: orderCustomer });
 
     if (method === "ONLINE") {
       if (!verifyRazorpayPayment(razorpay || {})) return res.status(400).json({ message: "Online payment verification failed." });
@@ -1709,7 +1711,7 @@ app.post("/api/orders", async (req, res, next) => {
     const order = await prisma.$transaction(async (tx) => {
       for (const row of rows) await tx.product.update({ where: { id: row.productId }, data: { stock: { decrement: row.quantity } } });
       if (coupon) await tx.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
-      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...customer, paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows.map(({ productId, name, price, quantity, weight }) => ({ productId, name, price, quantity, weight })) } }, include: { items: true } });
+      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...orderCustomer, email: "", pincode: "", paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows.map(({ productId, name, price, quantity, weight }) => ({ productId, name, price, quantity, weight })) } }, include: { items: true } });
     });
 
     await sendNewOrderPush(order).catch((error) => {
