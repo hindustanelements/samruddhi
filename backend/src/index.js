@@ -1172,7 +1172,7 @@ app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res, next) => {
         (SELECT COUNT(*)::int FROM "ContactSubmission") AS contacts,
         COALESCE((SELECT SUM(total) FROM "Order"), 0) AS revenue,
         (SELECT COUNT(*)::int FROM "SiteVisit") AS totalvisitors,
-        (SELECT COUNT(*)::int FROM "SiteVisit" WHERE "createdAt" >= CURRENT_DATE) AS todayvisitors
+        (SELECT COUNT(DISTINCT "ipHash")::int FROM "SiteVisit" WHERE "createdAt" >= CURRENT_DATE) AS todayuniquevisitors
     `;
     res.json({
       products: Number(overview?.products || 0),
@@ -1181,7 +1181,7 @@ app.get("/api/admin/overview", auth(Role.ADMIN), async (_req, res, next) => {
       contacts: Number(overview?.contacts || 0),
       revenue: Number(overview?.revenue || 0),
       totalVisitors: Number(overview?.totalvisitors || 0),
-      todayVisitors: Number(overview?.todayvisitors || 0)
+      todayUniqueVisitors: Number(overview?.todayuniquevisitors || 0)
     });
   } catch (e) { next(e); }
 });
