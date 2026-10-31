@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
-import { money, request } from "../lib/store";
+import { getDeliveryCharge, money, request } from "../lib/store";
 
 function Checkout() {
   const { cart, setCart, user } = useApp();
@@ -22,18 +22,17 @@ function Checkout() {
   const [couponBusy, setCouponBusy] = useState(false);
   const [deliverySettings, setDeliverySettings] = useState({ freeDelivery: false, vizagCharge: 60, otherCharge: 0 });
   const [deliverySettingsLoaded, setDeliverySettingsLoaded] = useState(false);
+  const [deliverySettingsError, setDeliverySettingsError] = useState("");
   useEffect(() => {
     request("/delivery-settings")
       .then(setDeliverySettings)
-      .catch((e) => setError(e.message))
+      .catch((e) => setDeliverySettingsError(e.message))
       .finally(() => setDeliverySettingsLoaded(true));
   }, []);
   const subtotal = cart.reduce((s, x) => s + (x.discountPrice || x.price) * x.quantity, 0);
-  const isVizag = form.city.toLowerCase().includes("vizag") || form.city.toLowerCase().includes("visakhapatnam");
-  const hasDeliveryLocation = Boolean(form.city.trim());
-  const delivery = deliverySettings.freeDelivery ? 0 : isVizag ? Number(deliverySettings.vizagCharge) : Number(deliverySettings.otherCharge);
-  const displayDelivery = !hasDeliveryLocation ? "Enter city" : delivery === 0 ? "Free" : money(delivery);
-  const displayTotal = deliverySettingsLoaded && hasDeliveryLocation ? money(subtotal + delivery - (coupon?.discount || 0)) : "Enter city";
+  const delivery = getDeliveryCharge(deliverySettingsLoaded ? deliverySettings : null, form.city);
+  const displayDelivery = deliverySettingsError ? "Unavailable" : !deliverySettingsLoaded ? "Loading..." : delivery === null ? "Enter city" : delivery === 0 ? "Free" : money(delivery);
+  const displayTotal = deliverySettingsError ? "Unavailable" : !deliverySettingsLoaded ? "Loading..." : delivery === null ? "Enter city" : money(subtotal + delivery - (coupon?.discount || 0));
   const discount = coupon?.discount || 0;
 
   const orderItems = () => cart.map((x) => ({ productId: x.id, quantity: x.quantity }));
@@ -165,7 +164,7 @@ function Checkout() {
     <label className="sm:col-span-2"><span className="mb-2 block text-sm font-semibold text-forest">Complete delivery address</span><textarea required value={form.address} onChange={e=>setForm({...form,address:e.target.value})} className="field min-h-28"/></label></div>
     <div className="mt-9 rounded-2xl border border-forest/10 bg-white p-4"><label className="text-sm font-semibold text-forest">Coupon code</label><div className="mt-3 flex flex-col gap-3 sm:flex-row"><input value={couponCode} onChange={e=>setCouponCode(e.target.value.toUpperCase())} className="field" placeholder="Enter coupon code"/><div className="flex shrink-0 gap-2"><button type="button" onClick={applyCoupon} disabled={couponBusy || !couponCode.trim()} className="btn-light">{couponBusy?"Checking...":"Apply"}</button>{coupon&&<button type="button" onClick={removeCoupon} disabled={couponBusy} className="btn-light">Remove</button>}</div></div>{couponMessage&&<p className={`mt-3 text-sm ${coupon?"text-forest":"text-red-600"}`}>{couponMessage}</p>}</div>
     {error&&<p className="mt-4 text-sm text-red-600">{error}</p>}<div className="mt-8 grid gap-3 sm:grid-cols-2"><button type="submit" value="ONLINE" disabled={busy} className="btn-primary w-full justify-center">{busy?"Processing...":"Pay online"}</button><button type="submit" value="COD" disabled={busy} className="btn-light w-full justify-center">{busy?"Processing...":"Cash on delivery"}</button></div></form>
-    <aside className="card h-fit p-6"><h2 className="text-2xl text-forest">Your order</h2><div className="mt-5 max-h-72 space-y-4 overflow-auto">{cart.map(x=><div key={x.id} className="flex gap-3"><img src={x.image} className="aspect-[4/3] h-14 w-14 rounded-xl border border-forest/10 bg-white object-cover" alt={x.name}/><div className="flex-1"><p className="text-sm font-semibold">{x.name}</p><p className="text-xs text-ink/45">{x.weight} - Qty {x.quantity}</p></div><span className="text-sm font-bold">{money((x.discountPrice||x.price)*x.quantity)}</span></div>)}</div><div className="mt-5 space-y-2 border-t pt-5 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>{discount>0&&<div className="flex justify-between text-forest"><span>Coupon discount</span><span>-{money(discount)}</span></div>}<div className="flex justify-between"><span>Delivery</span><span>{displayDelivery}</span></div><div className="flex justify-between pt-2 text-lg font-bold"><span>Total</span><span>{displayTotal}</span></div></div>{isVizag && subtotal < 2500 && <div className="mt-4 rounded-xl bg-forest/5 p-3"><p className="text-xs text-forest font-semibold">🚚 Add {money(2500 - subtotal)} more for FREE delivery!</p><div className="mt-2 h-2 rounded-full bg-forest/10 overflow-hidden"><div className="h-full rounded-full bg-forest transition-all" style={{width:`${Math.min(100, (subtotal / 2500) * 100)}%`}}/></div></div>}{isVizag && subtotal >= 2500 && <p className="mt-4 text-xs text-forest font-semibold text-center">🎉 You qualify for FREE delivery!</p>}{!isVizag && <p className="mt-4 text-xs text-ink/50 text-center">Delivery charges will be confirmed after order placement.</p>}</aside></div></main>;
+    <aside className="card h-fit p-6"><h2 className="text-2xl text-forest">Your order</h2><div className="mt-5 max-h-72 space-y-4 overflow-auto">{cart.map(x=><div key={x.id} className="flex gap-3"><img src={x.image} className="aspect-[4/3] h-14 w-14 rounded-xl border border-forest/10 bg-white object-cover" alt={x.name}/><div className="flex-1"><p className="text-sm font-semibold">{x.name}</p><p className="text-xs text-ink/45">{x.weight} - Qty {x.quantity}</p></div><span className="text-sm font-bold">{money((x.discountPrice||x.price)*x.quantity)}</span></div>)}</div><div className="mt-5 space-y-2 border-t pt-5 text-sm"><div className="flex justify-between"><span>Subtotal</span><span>{money(subtotal)}</span></div>{discount>0&&<div className="flex justify-between text-forest"><span>Coupon discount</span><span>-{money(discount)}</span></div>}<div className="flex justify-between"><span>Delivery</span><span>{displayDelivery}</span></div><div className="flex justify-between pt-2 text-lg font-bold"><span>Total</span><span>{displayTotal}</span></div></div>{deliverySettingsError&&<p className="mt-3 text-sm text-red-600">{deliverySettingsError}</p>}</aside></div></main>;
 }
 
 export default Checkout;

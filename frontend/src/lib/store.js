@@ -16,6 +16,16 @@ const fallbackCategoryImages = {
 
 export const money = (v) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(v || 0);
 
+export const getDeliveryCharge = (settings, city) => {
+  if (!settings) return null;
+  if (settings.freeDelivery) return 0;
+  if (!city?.trim()) return null;
+
+  const normalizedCity = city.toLowerCase();
+  const isVizag = normalizedCity.includes("vizag") || normalizedCity.includes("visakhapatnam");
+  return Number(isVizag ? settings.vizagCharge : settings.otherCharge);
+};
+
 export async function request(path, options = {}) {
   const token = typeof window !== "undefined" ? window.localStorage.getItem("samruddhi-token") : null;
   const res = await fetch(`${API}${path}`, {
