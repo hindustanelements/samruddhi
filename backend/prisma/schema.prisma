@@ -131,6 +131,14 @@ model Order {
   couponId      Int?
   coupon        Coupon?       @relation(fields: [couponId], references: [id])
   total         Decimal       @db.Decimal(10, 2)
+  shiprocketOrderId    String?
+  shiprocketShipmentId String?
+  shiprocketAwbCode    String?
+  shiprocketCourierName String?
+  shiprocketTrackingUrl String?
+  shiprocketStatus     String   @default("NOT_BOOKED")
+  shiprocketError      String?
+  shiprocketBookedAt   DateTime?
   items         OrderItem[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

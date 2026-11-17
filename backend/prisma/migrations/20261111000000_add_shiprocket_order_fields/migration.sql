@@ -1,0 +1,9 @@
+ALTER TABLE "Order"
+  ADD COLUMN IF NOT EXISTS "shiprocketOrderId" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketShipmentId" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketAwbCode" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketCourierName" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketTrackingUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketStatus" TEXT NOT NULL DEFAULT 'NOT_BOOKED',
+  ADD COLUMN IF NOT EXISTS "shiprocketError" TEXT,
+  ADD COLUMN IF NOT EXISTS "shiprocketBookedAt" TIMESTAMP(3);

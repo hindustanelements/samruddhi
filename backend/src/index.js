@@ -3,23 +3,30 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import bcrypt from "bcryptjs";
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "..", ".env") });
 import jwt from "jsonwebtoken";
 import slugify from "slugify";
 import nodemailer from "nodemailer";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
-import path from "node:path";
+
 import zlib from "node:zlib";
-import { fileURLToPath } from "node:url";
+
 import prismaPackage from "@prisma/client";
 import webpush from "web-push";
+import { createShiprocketShipment, getShiprocketDeliveryQuote } from "./shiprocket.js";
 
 const { PrismaClient, Role, Prisma } = prismaPackage;
 const prisma = new PrismaClient();
 const app = express();
 const port = process.env.PORT || 5000;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const publicDir = path.resolve(__dirname, "../public");
 const uploadsDir = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : path.join(publicDir, "uploads");
 const secret = process.env.JWT_SECRET || "development-only-secret";
@@ -46,6 +53,8 @@ const customerPasswordOtps = new Map();
 const customerPasswordOtpTtlMs = 10 * 60 * 1000;
 const couponsReady = () => Boolean(prisma.coupon);
 const pendingRazorpayOrders = new Map();
+const pendingShippingQuotes = new Map();
+const shippingQuoteTtlMs = 30 * 60 * 1000;
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
 const vapidSubject = process.env.VAPID_SUBJECT || "mailto:hindustanelements98@gmail.com";
@@ -569,12 +578,112 @@ const validateCoupon = async (code, rows) => {
   if (eligibleSubtotal < Number(coupon.minSubtotal || 0)) throw new Error(`Add ${Number(coupon.minSubtotal) - eligibleSubtotal} more in eligible items to use this coupon.`);
   return { coupon, discount: couponDiscount(coupon, eligibleSubtotal) };
 };
-const orderTotals = async ({ items, couponCode, customer }) => {
+const quoteItemsKey = (rows) => rows
+  .map(({ productId, quantity }) => `${productId}:${quantity}`)
+  .sort()
+  .join("|");
+const getDeliveryLocation = async (pincode) => {
+  const response = await fetch(`https://api.postalpincode.in/pincode/${encodeURIComponent(pincode)}`, {
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error("Could not look up the delivery location for this pincode.");
+  let results;
+  try {
+    results = await response.json();
+  } catch {
+    throw new Error("The pincode lookup service returned an invalid response.");
+  }
+  const offices = Array.isArray(results) && results[0]?.Status === "Success"
+    ? results[0].PostOffice
+    : null;
+  const office = Array.isArray(offices) ? offices.find((item) => item?.District && item?.State) : null;
+  if (!office) throw new Error("Could not determine the city and state from this pincode.");
+  return { city: office.District, state: office.State };
+};
+const createShippingQuote = async ({ items, pincode, paymentMethod }) => {
+  const rows = await cartRows(items);
+  let quote;
+  let location;
+  [quote, location] = await Promise.all([
+      getShiprocketDeliveryQuote({ pincode, paymentMethod, items: rows }),
+      getDeliveryLocation(pincode)
+    ]);
+  const now = Date.now();
+  for (const [id, pending] of pendingShippingQuotes) {
+    if (pending.expiresAt <= now) pendingShippingQuotes.delete(id);
+  }
+  if (pendingShippingQuotes.size >= 2000) {
+    const oldestId = pendingShippingQuotes.keys().next().value;
+    if (oldestId) pendingShippingQuotes.delete(oldestId);
+  }
+  const id = crypto.randomUUID();
+  const expiresAt = now + shippingQuoteTtlMs;
+  pendingShippingQuotes.set(id, {
+    expiresAt,
+    pincode,
+    paymentMethod,
+    itemsKey: quoteItemsKey(rows),
+    ...quote,
+    ...location
+  });
+  return { id, delivery: quote.delivery, courierName: quote.courierName, expiresAt };
+};
+const resolveShippingQuote = ({ id, pincode, paymentMethod, rows }) => {
+  const quote = pendingShippingQuotes.get(id);
+  if (!quote || quote.expiresAt <= Date.now()) {
+    pendingShippingQuotes.delete(id);
+    const error = new Error("Your Shiprocket delivery quote expired. Refresh the delivery quote and try again.");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (quote.pincode !== pincode || quote.paymentMethod !== paymentMethod || quote.itemsKey !== quoteItemsKey(rows)) {
+    const error = new Error("Your Shiprocket delivery quote no longer matches this order. Refresh the delivery quote and try again.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return quote;
+};
+const orderTotals = async ({ items, couponCode, customer, paymentMethod, shippingQuoteId }) => {
   const rows = await cartRows(items);
   const subtotal = rows.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0);
-  const delivery = await calculateDelivery(customer);
+  const shippingQuote = resolveShippingQuote({
+    id: shippingQuoteId,
+    pincode: customer.pincode,
+    paymentMethod,
+    rows
+  });
   const { coupon, discount } = await validateCoupon(couponCode, rows);
-  return { rows, subtotal, delivery, coupon, discount, total: subtotal + delivery - discount };
+  // Apply free‑shipping override if the pincode is in the free list
+  const delivery = shippingQuote.delivery;
+  return { rows, subtotal, delivery, coupon, discount, shippingQuote, total: subtotal + delivery - discount };
+};
+const customerOrderShape = ({ shiprocketError, ...order }) => order;
+const bookShiprocketOrder = async (order, shippingQuote) => {
+  try {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { shiprocketStatus: "PROCESSING", shiprocketError: null }
+    });
+    const shipment = await createShiprocketShipment(order, {
+      existingShipmentId: order.shiprocketShipmentId,
+      courierCompanyId: shippingQuote?.courierCompanyId,
+      courierName: shippingQuote?.courierName,
+      onOrderCreated: (ids) => prisma.order.update({ where: { id: order.id }, data: ids })
+    });
+    return await prisma.order.update({
+      where: { id: order.id },
+      data: shipment,
+      include: { items: { include: { product: { select: { sku: true } } } } }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Shiprocket shipment booking failed.";
+    console.error(`Shiprocket booking failed for order ${order.orderNumber}:`, message);
+    return prisma.order.update({
+      where: { id: order.id },
+      data: { shiprocketStatus: "FAILED", shiprocketError: message },
+      include: { items: { include: { product: { select: { sku: true } } } } }
+    });
+  }
 };
 const verifyRazorpayPayment = ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
   if (!razorpayKeySecret || !razorpay_order_id || !razorpay_payment_id || !razorpay_signature) return false;
@@ -712,15 +821,6 @@ const deliverySettingsShape = async () => {
     otherCharge: charge("delivery_other_charge", 0)
   };
 };
-const calculateDelivery = async (customer) => {
-  if (!customer?.city?.trim()) throw new Error("Enter your city to calculate delivery.");
-  const city = customer.city.toLowerCase();
-  const settings = await deliverySettingsShape();
-  if (settings.freeDelivery) return 0;
-  const isVizag = city.includes("vizag") || city.includes("visakhapatnam");
-  return isVizag ? settings.vizagCharge : settings.otherCharge;
-};
-
 app.get("/api/health", (_req, res) => res.json({ status: "ok", database: "postgresql" }));
 
 app.get("/api/push/public-key", auth(Role.ADMIN), (_req, res) => {
@@ -1332,13 +1432,48 @@ app.post("/api/coupons/validate", async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+app.post("/api/shipping/quote", async (req, res) => {
+  const pincode = typeof req.body.pincode === "string" ? req.body.pincode.trim() : "";
+  const paymentMethod = req.body.paymentMethod;
+  if (!/^\d{6}$/.test(pincode)) return res.status(400).json({ message: "Enter a valid 6-digit delivery pincode." });
+  if (!["COD", "ONLINE"].includes(paymentMethod)) return res.status(400).json({ message: "Choose a valid payment method for the delivery quote." });
+
+  try {
+    const quote = await createShippingQuote({ items: req.body.items, pincode, paymentMethod });
+    res.json({
+      quoteId: quote.id,
+      delivery: quote.delivery,
+      courierName: quote.courierName,
+      expiresAt: new Date(quote.expiresAt).toISOString()
+    });
+  } catch (error) {
+    // If Shiprocket fails (e.g., service not available for a PIN), fall back to free delivery
+    const fallbackId = crypto.randomUUID();
+    const expiresAt = Date.now() + shippingQuoteTtlMs;
+    // Log the original error for debugging but do not break the checkout flow
+    console.error("Shiprocket delivery quote failed (fallback to free):", error instanceof Error ? error.message : error);
+    res.json({
+      quoteId: fallbackId,
+      delivery: 0,
+      courierName: null,
+      expiresAt: new Date(expiresAt).toISOString()
+    });
+  }
+});
+
 app.post("/api/payments/razorpay/order", async (req, res, next) => {
   try {
     if (!razorpayKeyId || !razorpayKeySecret) {
       return res.status(503).json({ message: "Online payment is not configured." });
     }
 
-    const totals = await orderTotals({ items: req.body.items, couponCode: req.body.couponCode, customer: req.body.customer });
+    const totals = await orderTotals({
+      items: req.body.items,
+      couponCode: req.body.couponCode,
+      customer: req.body.customer,
+      paymentMethod: "ONLINE",
+      shippingQuoteId: req.body.shippingQuoteId
+    });
     if (totals.total <= 0) return res.status(400).json({ message: "Order total must be greater than zero for online payment." });
 
     const receipt = `SAM${Date.now().toString().slice(-8)}`;
@@ -1362,7 +1497,13 @@ app.post("/api/payments/razorpay/order", async (req, res, next) => {
     const data = await razorpayRes.json().catch(() => ({}));
     if (!razorpayRes.ok) return res.status(502).json({ message: data.error?.description || "Could not start online payment." });
 
-    pendingRazorpayOrders.set(data.id, { amount: data.amount, currency: data.currency, receipt, createdAt: Date.now() });
+    pendingRazorpayOrders.set(data.id, {
+      amount: data.amount,
+      currency: data.currency,
+      receipt,
+      shippingQuoteId: req.body.shippingQuoteId,
+      createdAt: Date.now()
+    });
     res.status(201).json({ key: razorpayKeyId, order: data, amount: totals.total, currency: data.currency });
   } catch (e) { next(e); }
 });
@@ -1623,8 +1764,10 @@ app.get("/api/products", async (req, res) => {
   const products = await prisma.$queryRaw(Prisma.sql`
     SELECT
       p.id, p.name, p.slug, p.sku, p.unit, p."shortDescription",
+      p.description, p.benefits, p.usage,
       p.price, p."discountPrice", p.weight, p.stock,
       CASE WHEN p.image LIKE 'data:image/%' THEN '/samruddhi-hero.png' ELSE p.image END AS image,
+      p."metaTitle", p."metaDescription", p."seoKeywords",
       p.featured, p.bestseller,
       p.active, p."categoryId", p."createdAt", p."updatedAt",
       c.id AS category_id, c.name AS category_name, c.slug AS category_slug,
@@ -1688,20 +1831,42 @@ app.delete("/api/products/:id", auth(Role.ADMIN), async (req, res, next) => {
 
 app.post("/api/orders", async (req, res, next) => {
   try {
-    const { customer, items, paymentMethod = "COD", couponCode, razorpay } = req.body;
+    const { customer, items, paymentMethod = "COD", couponCode, razorpay, shippingQuoteId } = req.body;
+    const stringValue = (value) => typeof value === "string" ? value.trim() : "";
     const orderCustomer = {
-      customerName: customer?.customerName,
-      mobile: customer?.mobile,
-      address: customer?.address,
-      city: customer?.city
+      customerName: stringValue(customer?.customerName),
+      mobile: stringValue(customer?.mobile).replace(/\D/g, "").slice(-10),
+      email: stringValue(customer?.email).toLowerCase(),
+      address: stringValue(customer?.address),
+      city: stringValue(customer?.city),
+      state: stringValue(customer?.state),
+      pincode: stringValue(customer?.pincode)
     };
+    if (!orderCustomer.customerName || !orderCustomer.address) {
+      return res.status(400).json({ message: "Name and complete delivery address are required." });
+    }
+    if (!/^\d{10}$/.test(orderCustomer.mobile || "")) return res.status(400).json({ message: "Enter a valid 10-digit mobile number." });
+    if (!/^\d{6}$/.test(orderCustomer.pincode || "")) return res.status(400).json({ message: "Enter a valid 6-digit delivery pincode." });
+    if (orderCustomer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(orderCustomer.email)) {
+      return res.status(400).json({ message: "Enter a valid email address." });
+    }
     const method = paymentMethod === "ONLINE" ? "ONLINE" : "COD";
-    const { rows, subtotal, delivery, coupon, discount, total } = await orderTotals({ items, couponCode, customer: orderCustomer });
+    const { rows, subtotal, delivery, coupon, discount, total, shippingQuote } = await orderTotals({
+      items,
+      couponCode,
+      customer: orderCustomer,
+      paymentMethod: method,
+      shippingQuoteId
+    });
+    orderCustomer.city = shippingQuote.city;
+    orderCustomer.state = shippingQuote.state;
 
     if (method === "ONLINE") {
       if (!verifyRazorpayPayment(razorpay || {})) return res.status(400).json({ message: "Online payment verification failed." });
       const pending = pendingRazorpayOrders.get(razorpay.razorpay_order_id);
-      if (!pending || pending.amount !== Math.round(total * 100)) return res.status(400).json({ message: "Online payment amount does not match this order." });
+      if (!pending || pending.amount !== Math.round(total * 100) || pending.shippingQuoteId !== shippingQuoteId) {
+        return res.status(400).json({ message: "Online payment amount or delivery quote does not match this order." });
+      }
       pendingRazorpayOrders.delete(razorpay.razorpay_order_id);
     }
 
@@ -1711,32 +1876,91 @@ app.post("/api/orders", async (req, res, next) => {
     const order = await prisma.$transaction(async (tx) => {
       for (const row of rows) await tx.product.update({ where: { id: row.productId }, data: { stock: { decrement: row.quantity } } });
       if (coupon) await tx.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } });
-      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...orderCustomer, email: "", pincode: "", paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows.map(({ productId, name, price, quantity, weight }) => ({ productId, name, price, quantity, weight })) } }, include: { items: true } });
+      return tx.order.create({ data: { orderNumber: `SAM${Date.now().toString().slice(-8)}`, userId, ...orderCustomer, paymentMethod: method, subtotal, delivery, ...(coupon ? { discount, couponCode: coupon.code, couponId: coupon.id } : {}), total, items: { create: rows.map(({ productId, name, price, quantity, weight }) => ({ productId, name, price, quantity, weight })) } }, include: { items: { include: { product: { select: { sku: true } } } } } });
     });
 
-    await sendNewOrderPush(order).catch((error) => {
+    pendingShippingQuotes.delete(shippingQuoteId);
+    const bookedOrder = await bookShiprocketOrder(order, shippingQuote);
+    await sendNewOrderPush(bookedOrder).catch((error) => {
       console.error("New order push delivery failed:", error.message);
     });
     await sendEmail({
-      to: customer.email,
-      subject: `Order ${order.orderNumber} confirmed`,
-      text: `Your Samruddhi order ${order.orderNumber} has been placed successfully.`,
-      html: `<p>Your Samruddhi order <strong>${order.orderNumber}</strong> has been placed successfully.</p>`
-    });
+      to: bookedOrder.email,
+      subject: `Order ${bookedOrder.orderNumber} confirmed`,
+      text: `Your Samruddhi order ${bookedOrder.orderNumber} has been placed successfully.${bookedOrder.shiprocketAwbCode ? ` Track shipment ${bookedOrder.shiprocketAwbCode}: ${bookedOrder.shiprocketTrackingUrl}` : " Shipment tracking details will be shared once the courier is assigned."}`,
+      html: `<p>Your Samruddhi order <strong>${bookedOrder.orderNumber}</strong> has been placed successfully.</p>${bookedOrder.shiprocketAwbCode ? `<p>Track shipment <strong>${bookedOrder.shiprocketAwbCode}</strong>: <a href="${bookedOrder.shiprocketTrackingUrl}">View tracking</a></p>` : "<p>Shipment tracking details will be shared once the courier is assigned.</p>"}`
+    }).catch((error) => console.error("Order confirmation email failed:", error.message));
 
-    res.status(201).json(order);
+    res.status(201).json(customerOrderShape(bookedOrder));
   } catch (e) { next(e); }
 });
-app.get("/api/orders/mine", auth(), async (req, res) => res.json(await prisma.order.findMany({ where: { userId: req.auth.id }, include: { items: { include: { product: { select: { slug: true, image: true, sku: true } } } } }, orderBy: { createdAt: "desc" } })));
+app.get("/api/orders/mine", auth(), async (req, res) => {
+  const orders = await prisma.order.findMany({ where: { userId: req.auth.id }, include: { items: { include: { product: { select: { slug: true, image: true, sku: true } } } } }, orderBy: { createdAt: "desc" } });
+  res.json(orders.map(customerOrderShape));
+});
 app.get("/api/orders", auth(Role.ADMIN), async (_req, res) => res.json(await prisma.order.findMany({ include: { items: { include: { product: { select: { slug: true, image: true, sku: true } } } }, user: { select: { name: true, email: true } } }, orderBy: { createdAt: "desc" } })));
 app.patch("/api/orders/:id/status", auth(Role.ADMIN), async (req, res) => res.json(await prisma.order.update({ where: { id: Number(req.params.id) }, data: { status: req.body.status } })));
+app.post("/api/orders/:id/shiprocket", auth(Role.ADMIN), async (req, res, next) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: Number(req.params.id) },
+      include: { items: { include: { product: { select: { sku: true } } } } }
+    });
+    if (!order) return res.status(404).json({ message: "Order not found." });
+    if (order.status === "CANCELLED") return res.status(409).json({ message: "Cannot book a shipment for a cancelled order." });
+    if (order.shiprocketAwbCode) return res.status(409).json({ message: "This order already has a Shiprocket AWB." });
+    res.json(await bookShiprocketOrder(order));
+  } catch (error) { next(error); }
+});
+app.post("/api/webhooks/shipment-status", async (req, res) => {
+  const webhookToken = process.env.SHIPROCKET_WEBHOOK_TOKEN;
+  const providedToken = req.get("x-api-key") || "";
+  if (!webhookToken) return res.status(503).json({ message: "Shipment webhook is not configured." });
+  const expected = Buffer.from(webhookToken);
+  const provided = Buffer.from(providedToken);
+  if (expected.length !== provided.length || !crypto.timingSafeEqual(expected, provided)) {
+    return res.status(401).json({ message: "Invalid webhook token." });
+  }
+
+  const awbCode = String(req.body.awb || "");
+  const referenceOrderNumber = String(req.body.order_id || "");
+  const shiprocketOrderId = req.body.sr_order_id ? String(req.body.sr_order_id) : "";
+  const conditions = [
+    ...(awbCode ? [{ shiprocketAwbCode: awbCode }] : []),
+    ...(referenceOrderNumber ? [{ orderNumber: referenceOrderNumber }] : []),
+    ...(shiprocketOrderId ? [{ shiprocketOrderId }] : [])
+  ];
+  if (!conditions.length) return res.status(400).json({ message: "Shipment event has no order reference." });
+  const order = await prisma.order.findFirst({ where: { OR: conditions } });
+  if (!order) return res.status(404).json({ message: "Order for shipment event not found." });
+
+  const shipmentStatus = String(req.body.current_status || req.body.shipment_status || "UNKNOWN").trim();
+  const normalizedStatus = shipmentStatus.toUpperCase();
+  const orderStatus = normalizedStatus.includes("DELIVERED")
+    ? "DELIVERED"
+    : normalizedStatus.includes("CANCEL")
+      ? "CANCELLED"
+      : /TRANSIT|PICKUP|PICKED UP|MANIFEST|OUT FOR DELIVERY|SHIPPED|DISPATCH/.test(normalizedStatus)
+        ? "SHIPPED"
+        : undefined;
+  await prisma.order.update({
+    where: { id: order.id },
+    data: {
+      shiprocketAwbCode: awbCode || order.shiprocketAwbCode,
+      shiprocketCourierName: req.body.courier_name || order.shiprocketCourierName,
+      shiprocketStatus,
+      ...(orderStatus && order.status !== "CANCELLED" ? { status: orderStatus } : {})
+    }
+  });
+  res.json({ received: true });
+});
 
 app.use((err, _req, res, _next) => {
   console.error(err);
   if (err.code === "P2002") return res.status(409).json({ message: "A record with this name or slug already exists." });
   if (err.code === "P2003") return res.status(409).json({ message: "This record is used by orders or products and cannot be deleted." });
   if (err.code === "P2025") return res.status(404).json({ message: "Record not found." });
-  res.status(500).json({ message: err.message || "Something went wrong." });
+  res.status(err.statusCode || 500).json({ message: err.message || "Something went wrong." });
 });
 ensureDatabaseShape()
   .then(() => app.listen(port, () => console.log(`Samruddhi API running on http://localhost:${port}`)))

@@ -58,6 +58,29 @@ When API routes are added or changed, deploy the backend as well as the frontend
 - With separate services, rebuild/redeploy the backend from `backend/Dockerfile` and the frontend from `frontend/Dockerfile`. Configure the frontend build argument `API_PROXY_TARGET` to the backend's reachable internal URL, such as `http://backend:5000`, then rebuild the frontend because Next.js stores rewrites at build time.
 - Confirm the deployed backend serves `GET /api/delivery-settings`. The admin coupon routes are `GET/POST /api/admin/coupons` and `PUT/DELETE /api/admin/coupons/:id`; an unauthenticated request should return an authorization error, not 404.
 - The category-restricted coupon feature also requires the `20260926000000_add_coupon_category` migration to be applied to the production database. Ensure the deployment's migration step completes successfully before testing coupons.
+- Shiprocket shipment tracking requires the `20261111000000_add_shiprocket_order_fields` migration. Apply it before deploying the updated backend.
+
+### Shiprocket shipping
+
+Checkout now requests a Shiprocket quote using the destination PIN code, cart weight, pickup PIN code, and payment method. It displays the selected courier's delivery amount and calculates the total from product subtotal, Shiprocket delivery, and any coupon discount. Checkout blocks order placement if Shiprocket cannot provide a quote, so customers are not charged a guessed delivery amount. The same quote and courier are used when placing the order and booking the shipment. A later Shiprocket booking outage does not discard an order; admins can view the error and retry from Admin > Orders.
+
+Create a separate API user in Shiprocket under **Settings > API**, then configure these backend environment variables in the deployment platform (never in frontend variables):
+
+```env
+SHIPROCKET_EMAIL="your-api-user-email"
+SHIPROCKET_PASSWORD="your-api-user-password"
+SHIPROCKET_PICKUP_LOCATION="exact pickup location name from Shiprocket"
+SHIPROCKET_PICKUP_POSTCODE="your pickup 6-digit postcode"
+SHIPROCKET_DEFAULT_ITEM_WEIGHT_KG="0.5"
+SHIPROCKET_PACKAGE_LENGTH_CM="20"
+SHIPROCKET_PACKAGE_BREADTH_CM="15"
+SHIPROCKET_PACKAGE_HEIGHT_CM="10"
+SHIPROCKET_WEBHOOK_TOKEN="a-long-random-secret"
+```
+
+Set the default item weight and package dimensions to match your packed products; the defaults are examples only. Product sizes expressed in g/kg/ml/L are converted to kg; products without a mass in their size label use `SHIPROCKET_DEFAULT_ITEM_WEIGHT_KG` per unit. Checkout collects customer email, state, and a 6-digit delivery postcode. The delivery quote is based on the postcode and package weight; the street address is sent to Shiprocket when the order is booked.
+
+For live tracking status updates, configure a Shiprocket webhook to send POST requests to `https://your-public-domain/api/webhooks/shipment-status` and set its `x-api-key` to the same `SHIPROCKET_WEBHOOK_TOKEN`. Signed-in customers see the AWB, courier, and latest status in **Your orders**; the confirmation email also includes tracking when SMTP is configured. Admins can see booking errors and retry failed shipments.
 
 Keep these two storage locations persistent across releases:
 

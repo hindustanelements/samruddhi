@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Pencil, Save } from "lucide-react";
+import { Navigate } from "react-router-dom";
 import { useApp } from "../context/AppContext";
 import { request } from "../lib/store";
 import AuthPage from "./AuthPage";
@@ -37,6 +38,7 @@ function Profile() {
   }, [user?.id]);
 
   if (!user) return <AuthPage/>;
+  if (user.role === "ADMIN") return <Navigate to="/admin" replace/>;
 
   const saveProfile = async (e) => {
     e.preventDefault();
